@@ -1,0 +1,328 @@
+"""Named query functions for all database operations."""
+
+from __future__ import annotations
+
+from datetime import datetime, timezone
+from typing import Any, Dict, List, Optional, Tuple
+
+from .database import DatabaseManager
+from .models import (
+    AgentLog, Alert, AnalysisResult, Insight,
+    MarketPair, NormalizedMarket, PriceSnapshot,
+)
+
+import json
+
+
+def _now() -> str:
+    return datetime.now(timezone.utc).isoformat()
+
+
+class MarketQueries:
+    def __init__(self, db: DatabaseManager) -> None:
+        self.db = db
+
+    # ── Markets ──────────────────────────────────────────────
+
+    def upsert_market(self, market: NormalizedMarket) -> int:
+        """Insert or update a market, returning its ID."""
+        with self.db._connect() as conn:
+            conn.execute("""
+                INSERT INTO markets (platform, platform_id, title, description,
+                    category, status, yes_price, no_price, volume, liquidity,
+                    close_time, url, last_updated, raw_data)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                ON CONFLICT(platform, platform_id) DO UPDATE SET
+                    title=excluded.title,
+                    description=excluded.description,
+                    category=excluded.category,
+                    status=excluded.status,
+                    yes_price=excluded.yes_price,
+                    no_price=excluded.no_price,
+                    volume=excluded.volume,
+                    liquidity=excluded.liquidity,
+                    close_time=excluded.close_time,
+                    url=excluded.url,
+                    last_updated=excluded.last_updated,
+                    raw_data=excluded.raw_data
+            """, (
+                market.platform, market.platform_id, market.title,
+                market.description, market.category, market.status,
+                market.yes_price, market.no_price, market.volume,
+                market.liquidity, market.close_time, market.url,
+                _now(), market.raw_data,
+            ))
+            row = conn.execute(
+                "SELECT id FROM markets WHERE platform=? AND platform_id=?",
+                (market.platform, market.platform_id),
+            ).fetchone()
+            conn.commit()
+            return row["id"]
+
+    def get_all_markets(self, platform: Optional[str] = None,
+                        status: str = "active") -> List[Dict[str, Any]]:
+        with self.db._connect() as conn:
+            if platform:
+                rows = conn.execute(
+                    "SELECT * FROM markets WHERE platform=? AND status=? ORDER BY volume DESC",
+                    (platform, status),
+                ).fetchall()
+            else:
+                rows = conn.execute(
+                    "SELECT * FROM markets WHERE status=? ORDER BY volume DESC",
+                    (status,),
+                ).fetchall()
+            return [dict(r) for r in rows]
+
+    def get_market_by_id(self, market_id: int) -> Optional[Dict[str, Any]]:
+        with self.db._connect() as conn:
+            row = conn.execute("SELECT * FROM markets WHERE id=?", (market_id,)).fetchone()
+            return dict(row) if row else None
+
+    def get_markets_by_platform(self, platform: str) -> List[Dict[str, Any]]:
+        with self.db._connect() as conn:
+            rows = conn.execute(
+                "SELECT * FROM markets WHERE platform=? AND status='active' ORDER BY volume DESC",
+                (platform,),
+            ).fetchall()
+            return [dict(r) for r in rows]
+
+    def search_markets(self, query: str) -> List[Dict[str, Any]]:
+        with self.db._connect() as conn:
+            rows = conn.execute(
+                "SELECT * FROM markets WHERE title LIKE ? AND status='active' ORDER BY volume DESC",
+                (f"%{query}%",),
+            ).fetchall()
+            return [dict(r) for r in rows]
+
+    # ── Market Pairs ─────────────────────────────────────────
+
+    def upsert_pair(self, pair: MarketPair) -> int:
+        with self.db._connect() as conn:
+            existing = conn.execute(
+                "SELECT id FROM market_pairs WHERE kalshi_market_id=? AND polymarket_market_id=?",
+                (pair.kalshi_market_id, pair.polymarket_market_id),
+            ).fetchone()
+            if existing:
+                conn.execute("""
+                    UPDATE market_pairs SET match_confidence=?, match_reason=?,
+                        price_gap=?, last_checked=?
+                    WHERE id=?
+                """, (pair.match_confidence, pair.match_reason,
+                      pair.price_gap, _now(), existing["id"]))
+                conn.commit()
+                return existing["id"]
+            else:
+                cursor = conn.execute("""
+                    INSERT INTO market_pairs (kalshi_market_id, polymarket_market_id,
+                        match_confidence, match_reason, price_gap, last_checked)
+                    VALUES (?, ?, ?, ?, ?, ?)
+                """, (pair.kalshi_market_id, pair.polymarket_market_id,
+                      pair.match_confidence, pair.match_reason,
+                      pair.price_gap, _now()))
+                conn.commit()
+                return cursor.lastrowid
+
+    def get_all_pairs(self) -> List[Dict[str, Any]]:
+        with self.db._connect() as conn:
+            rows = conn.execute("""
+                SELECT mp.*,
+                    km.title as kalshi_title, km.yes_price as kalshi_yes,
+                    km.platform_id as kalshi_platform_id,
+                    pm.title as poly_title, pm.yes_price as poly_yes,
+                    pm.platform_id as poly_platform_id
+                FROM market_pairs mp
+                LEFT JOIN markets km ON mp.kalshi_market_id = km.id
+                LEFT JOIN markets pm ON mp.polymarket_market_id = pm.id
+                ORDER BY mp.price_gap DESC
+            """).fetchall()
+            return [dict(r) for r in rows]
+
+    # ── Price Snapshots ──────────────────────────────────────
+
+    def insert_snapshot(self, snapshot: PriceSnapshot) -> int:
+        with self.db._connect() as conn:
+            cursor = conn.execute("""
+                INSERT INTO price_snapshots (market_id, yes_price, no_price,
+                    volume, open_interest, best_bid, best_ask, spread, timestamp)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """, (
+                snapshot.market_id, snapshot.yes_price, snapshot.no_price,
+                snapshot.volume, snapshot.open_interest, snapshot.best_bid,
+                snapshot.best_ask, snapshot.spread, _now(),
+            ))
+            conn.commit()
+            return cursor.lastrowid
+
+    def get_price_history(self, market_id: int,
+                          limit: int = 500) -> List[Dict[str, Any]]:
+        with self.db._connect() as conn:
+            rows = conn.execute("""
+                SELECT * FROM price_snapshots
+                WHERE market_id=?
+                ORDER BY timestamp DESC
+                LIMIT ?
+            """, (market_id, limit)).fetchall()
+            return [dict(r) for r in rows]
+
+    def get_latest_snapshot(self, market_id: int) -> Optional[Dict[str, Any]]:
+        with self.db._connect() as conn:
+            row = conn.execute("""
+                SELECT * FROM price_snapshots
+                WHERE market_id=?
+                ORDER BY timestamp DESC LIMIT 1
+            """, (market_id,)).fetchone()
+            return dict(row) if row else None
+
+    # ── Analysis Results ─────────────────────────────────────
+
+    def insert_analysis(self, result: AnalysisResult) -> int:
+        with self.db._connect() as conn:
+            cursor = conn.execute("""
+                INSERT INTO analysis_results (pair_id, kalshi_yes, poly_yes,
+                    price_gap, gap_direction, llm_analysis, risk_score)
+                VALUES (?, ?, ?, ?, ?, ?, ?)
+            """, (
+                result.pair_id, result.kalshi_yes, result.poly_yes,
+                result.price_gap, result.gap_direction,
+                result.llm_analysis, result.risk_score,
+            ))
+            conn.commit()
+            return cursor.lastrowid
+
+    def get_latest_analyses(self, limit: int = 50) -> List[Dict[str, Any]]:
+        with self.db._connect() as conn:
+            rows = conn.execute("""
+                SELECT ar.*, mp.kalshi_market_id, mp.polymarket_market_id,
+                    km.title as kalshi_title, pm.title as poly_title
+                FROM analysis_results ar
+                LEFT JOIN market_pairs mp ON ar.pair_id = mp.id
+                LEFT JOIN markets km ON mp.kalshi_market_id = km.id
+                LEFT JOIN markets pm ON mp.polymarket_market_id = pm.id
+                ORDER BY ar.created_at DESC LIMIT ?
+            """, (limit,)).fetchall()
+            return [dict(r) for r in rows]
+
+    # ── Alerts ───────────────────────────────────────────────
+
+    def insert_alert(self, alert: Alert) -> int:
+        with self.db._connect() as conn:
+            cursor = conn.execute("""
+                INSERT INTO alerts (alert_type, severity, market_id, pair_id,
+                    title, message, data, acknowledged)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+            """, (
+                alert.alert_type, alert.severity, alert.market_id,
+                alert.pair_id, alert.title, alert.message,
+                alert.data, 0,
+            ))
+            conn.commit()
+            return cursor.lastrowid
+
+    def get_alerts(self, alert_type: Optional[str] = None,
+                   acknowledged: Optional[bool] = None,
+                   limit: int = 100) -> List[Dict[str, Any]]:
+        with self.db._connect() as conn:
+            query = "SELECT a.*, m.title as market_title FROM alerts a LEFT JOIN markets m ON a.market_id = m.id WHERE 1=1"
+            params: list = []
+            if alert_type:
+                query += " AND a.alert_type=?"
+                params.append(alert_type)
+            if acknowledged is not None:
+                query += " AND a.acknowledged=?"
+                params.append(1 if acknowledged else 0)
+            query += " ORDER BY a.triggered_at DESC LIMIT ?"
+            params.append(limit)
+            rows = conn.execute(query, params).fetchall()
+            return [dict(r) for r in rows]
+
+    def acknowledge_alert(self, alert_id: int) -> None:
+        with self.db._connect() as conn:
+            conn.execute("UPDATE alerts SET acknowledged=1 WHERE id=?", (alert_id,))
+            conn.commit()
+
+    # ── Insights ─────────────────────────────────────────────
+
+    def insert_insight(self, insight: Insight) -> int:
+        with self.db._connect() as conn:
+            cursor = conn.execute("""
+                INSERT INTO insights (report_type, title, content,
+                    markets_covered, model_used, tokens_used)
+                VALUES (?, ?, ?, ?, ?, ?)
+            """, (
+                insight.report_type, insight.title, insight.content,
+                insight.markets_covered, insight.model_used,
+                insight.tokens_used,
+            ))
+            conn.commit()
+            return cursor.lastrowid
+
+    def get_insights(self, report_type: Optional[str] = None,
+                     limit: int = 20) -> List[Dict[str, Any]]:
+        with self.db._connect() as conn:
+            if report_type:
+                rows = conn.execute(
+                    "SELECT * FROM insights WHERE report_type=? ORDER BY created_at DESC LIMIT ?",
+                    (report_type, limit),
+                ).fetchall()
+            else:
+                rows = conn.execute(
+                    "SELECT * FROM insights ORDER BY created_at DESC LIMIT ?",
+                    (limit,),
+                ).fetchall()
+            return [dict(r) for r in rows]
+
+    # ── Agent Logs ───────────────────────────────────────────
+
+    def insert_agent_log(self, log: AgentLog) -> int:
+        with self.db._connect() as conn:
+            cursor = conn.execute("""
+                INSERT INTO agent_logs (agent_name, status, started_at,
+                    completed_at, duration_seconds, items_processed, summary, error)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+            """, (
+                log.agent_name, log.status, log.started_at,
+                log.completed_at, log.duration_seconds,
+                log.items_processed, log.summary, log.error,
+            ))
+            conn.commit()
+            return cursor.lastrowid
+
+    def get_agent_logs(self, agent_name: Optional[str] = None,
+                       limit: int = 50) -> List[Dict[str, Any]]:
+        with self.db._connect() as conn:
+            if agent_name:
+                rows = conn.execute(
+                    "SELECT * FROM agent_logs WHERE agent_name=? ORDER BY started_at DESC LIMIT ?",
+                    (agent_name, limit),
+                ).fetchall()
+            else:
+                rows = conn.execute(
+                    "SELECT * FROM agent_logs ORDER BY started_at DESC LIMIT ?",
+                    (limit,),
+                ).fetchall()
+            return [dict(r) for r in rows]
+
+    def get_latest_agent_run(self, agent_name: str) -> Optional[Dict[str, Any]]:
+        with self.db._connect() as conn:
+            row = conn.execute(
+                "SELECT * FROM agent_logs WHERE agent_name=? ORDER BY started_at DESC LIMIT 1",
+                (agent_name,),
+            ).fetchone()
+            return dict(row) if row else None
+
+    # ── Stats ────────────────────────────────────────────────
+
+    def get_market_counts(self) -> Dict[str, int]:
+        with self.db._connect() as conn:
+            rows = conn.execute(
+                "SELECT platform, COUNT(*) as cnt FROM markets WHERE status='active' GROUP BY platform"
+            ).fetchall()
+            return {r["platform"]: r["cnt"] for r in rows}
+
+    def get_alert_counts_by_type(self) -> Dict[str, int]:
+        with self.db._connect() as conn:
+            rows = conn.execute(
+                "SELECT alert_type, COUNT(*) as cnt FROM alerts GROUP BY alert_type"
+            ).fetchall()
+            return {r["alert_type"]: r["cnt"] for r in rows}
