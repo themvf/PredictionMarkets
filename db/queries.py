@@ -128,8 +128,14 @@ class MarketQueries:
             rows = conn.execute("""
                 SELECT mp.*,
                     km.title as kalshi_title, km.yes_price as kalshi_yes,
+                    km.no_price as kalshi_no, km.volume as kalshi_volume,
+                    km.liquidity as kalshi_liquidity, km.category as kalshi_category,
+                    km.close_time as kalshi_close_time,
                     km.platform_id as kalshi_platform_id,
                     pm.title as poly_title, pm.yes_price as poly_yes,
+                    pm.no_price as poly_no, pm.volume as poly_volume,
+                    pm.liquidity as poly_liquidity, pm.category as poly_category,
+                    pm.close_time as poly_close_time,
                     pm.platform_id as poly_platform_id
                 FROM market_pairs mp
                 LEFT JOIN markets km ON mp.kalshi_market_id = km.id

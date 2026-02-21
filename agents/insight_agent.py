@@ -3,6 +3,9 @@
 Generates natural language market intelligence briefings using GPT-4o
 from aggregated market data, alerts, and analysis results.
 
+Now includes domain context: implied probabilities, vig-adjusted gaps,
+liquidity tier classification, and platform-specific grounding.
+
 Schedule: Every 60 minutes.
 """
 
@@ -13,6 +16,10 @@ from typing import Any, Dict
 
 from .base import AgentResult, AgentStatus, BaseAgent
 from db.models import Insight
+from db.market_math import (
+    implied_probability, overround, cross_platform_gap,
+    liquidity_score, vig_adjusted_price,
+)
 
 
 class InsightAgent(BaseAgent):
@@ -43,31 +50,30 @@ class InsightAgent(BaseAgent):
         alerts = queries.get_alerts(acknowledged=False, limit=20)
         alert_count = len(alerts)
 
-        # Top markets by volume
+        # Top markets by volume — with implied probabilities and liquidity tiers
         all_markets = queries.get_all_markets()
         top_markets = all_markets[:15]
         top_markets_text = "\n".join(
-            f"- [{m['platform']}] {m['title']} — Yes: ${m.get('yes_price', 0) or 0:.2f}, Vol: {m.get('volume', 0) or 0:,.0f}"
-            for m in top_markets
+            self._format_market_line(m) for m in top_markets
         )
 
-        # Notable price gaps
+        # Notable price gaps — vig-adjusted
         gap_pairs = [p for p in pairs if p.get("price_gap") and p["price_gap"] >= 0.02]
         gap_pairs.sort(key=lambda p: p.get("price_gap", 0), reverse=True)
         price_gaps_text = "\n".join(
-            f"- {p.get('kalshi_title', 'Kalshi')}: ${p.get('kalshi_yes', 0) or 0:.2f} vs {p.get('poly_title', 'Poly')}: ${p.get('poly_yes', 0) or 0:.2f} (gap: ${p.get('price_gap', 0):.2f})"
-            for p in gap_pairs[:10]
-        ) or "No significant price gaps detected."
+            self._format_gap_line(p) for p in gap_pairs[:10]
+        ) or "No significant vig-adjusted price gaps detected."
 
-        # Recent alerts
+        # Recent alerts — with enriched context
         alerts_text = "\n".join(
             f"- [{a['severity'].upper()}] {a['title']}: {a['message']}"
             for a in alerts[:10]
         ) or "No recent alerts."
 
         # ── Generate briefing ────────────────────────────────
-        from llm.prompts import PROMPTS
+        from llm.prompts import PROMPTS, PLATFORM_CONTEXT
         prompt = PROMPTS["market_briefing"].format(
+            platform_context=PLATFORM_CONTEXT,
             total_markets=total_markets,
             kalshi_count=kalshi_count,
             poly_count=poly_count,
@@ -82,10 +88,9 @@ class InsightAgent(BaseAgent):
         if isinstance(report_content, dict):
             report_content = json.dumps(report_content)
 
-        # Persist the insight
         insight = Insight(
             report_type="briefing",
-            title=f"Market Intelligence Briefing",
+            title="Market Intelligence Briefing",
             content=report_content,
             markets_covered=total_markets,
             model_used="gpt-4o",
@@ -104,8 +109,47 @@ class InsightAgent(BaseAgent):
             },
         )
 
+    def _format_market_line(self, m: Dict[str, Any]) -> str:
+        """Format a single market line with domain context."""
+        price = m.get("yes_price")
+        no_price = m.get("no_price")
+        vol = m.get("volume", 0) or 0
+        liq_tier = liquidity_score(vol, m.get("liquidity"))
+        vig = overround(price, no_price)
+
+        prob_str = f"{price:.0%}" if price is not None else "N/A"
+        price_str = f"${price:.2f}" if price is not None else "N/A"
+        vig_str = f", vig: {vig:.1%}" if vig is not None else ""
+
+        return (
+            f"- [{m['platform']}] {m['title']} — "
+            f"Implied prob: {prob_str} (price: {price_str}{vig_str}) | "
+            f"Vol: ${vol:,.0f} [{liq_tier}]"
+        )
+
+    def _format_gap_line(self, p: Dict[str, Any]) -> str:
+        """Format a cross-platform gap line with vig-adjusted data."""
+        kalshi_yes = p.get("kalshi_yes")
+        poly_yes = p.get("poly_yes")
+        kalshi_no = p.get("kalshi_no")
+        poly_no = p.get("poly_no")
+
+        gap_data = cross_platform_gap(kalshi_yes, kalshi_no, poly_yes, poly_no)
+        raw_gap = gap_data.get("raw_gap", 0) or 0
+        fair_gap = gap_data.get("fair_gap")
+
+        k_prob = f"{kalshi_yes:.0%}" if kalshi_yes else "N/A"
+        p_prob = f"{poly_yes:.0%}" if poly_yes else "N/A"
+        fair_str = f"${fair_gap:.2f}" if fair_gap is not None else "N/A"
+
+        return (
+            f"- {p.get('kalshi_title', 'Kalshi')}: {k_prob} vs "
+            f"{p.get('poly_title', 'Poly')}: {p_prob} "
+            f"(raw gap: ${raw_gap:.2f}, fair gap: {fair_str})"
+        )
+
     def generate_alert_summary(self, context: Dict[str, Any]) -> str:
-        """Generate an on-demand alert summary."""
+        """Generate an on-demand alert summary with domain context."""
         queries = context["queries"]
         openai_client = context.get("openai_client")
 
@@ -121,11 +165,13 @@ class InsightAgent(BaseAgent):
             for a in alerts
         )
 
-        from llm.prompts import PROMPTS
-        prompt = PROMPTS["alert_summary"].format(alerts=alerts_text)
+        from llm.prompts import PROMPTS, PLATFORM_CONTEXT
+        prompt = PROMPTS["alert_summary"].format(
+            platform_context=PLATFORM_CONTEXT,
+            alerts=alerts_text,
+        )
         result = openai_client.chat(prompt)
 
-        # Save as insight
         insight = Insight(
             report_type="alert_summary",
             title="Alert Summary",

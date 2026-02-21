@@ -156,7 +156,11 @@ class DiscoveryAgent(BaseAgent):
         )
 
     def _match_markets(self, context: Dict[str, Any]) -> int:
-        """Use GPT-4o to find matching markets across platforms."""
+        """Use GPT-4o to find matching markets across platforms.
+
+        Includes platform context so the LLM understands structural
+        differences in how Kalshi and Polymarket title their markets.
+        """
         queries = context["queries"]
         openai_client = context["openai_client"]
 
@@ -166,18 +170,27 @@ class DiscoveryAgent(BaseAgent):
         if not kalshi_markets or not poly_markets:
             return 0
 
-        # Build compact lists for LLM matching
+        # Include close_time for temporal matching
         kalshi_list = [
-            {"id": m["id"], "title": m["title"], "category": m["category"]}
-            for m in kalshi_markets[:100]  # Limit to top 100 by volume
+            {
+                "id": m["id"], "title": m["title"],
+                "category": m["category"],
+                "close_time": m.get("close_time", ""),
+            }
+            for m in kalshi_markets[:100]
         ]
         poly_list = [
-            {"id": m["id"], "title": m["title"], "category": m["category"]}
+            {
+                "id": m["id"], "title": m["title"],
+                "category": m["category"],
+                "close_time": m.get("close_time", ""),
+            }
             for m in poly_markets[:100]
         ]
 
-        from llm.prompts import PROMPTS
+        from llm.prompts import PROMPTS, PLATFORM_CONTEXT
         prompt = PROMPTS["market_matching"].format(
+            platform_context=PLATFORM_CONTEXT,
             kalshi_markets=json.dumps(kalshi_list, indent=2),
             polymarket_markets=json.dumps(poly_list, indent=2),
         )
@@ -193,12 +206,18 @@ class DiscoveryAgent(BaseAgent):
             reason = match.get("reason", "")
 
             if kalshi_id and poly_id and confidence >= 0.7:
-                # Calculate price gap
+                # Calculate vig-adjusted fair gap
                 kalshi_m = queries.get_market_by_id(kalshi_id)
                 poly_m = queries.get_market_by_id(poly_id)
                 price_gap = None
-                if kalshi_m and poly_m and kalshi_m.get("yes_price") and poly_m.get("yes_price"):
-                    price_gap = abs(kalshi_m["yes_price"] - poly_m["yes_price"])
+                if kalshi_m and poly_m:
+                    from db.market_math import cross_platform_gap
+                    gap_data = cross_platform_gap(
+                        kalshi_m.get("yes_price"), kalshi_m.get("no_price"),
+                        poly_m.get("yes_price"), poly_m.get("no_price"),
+                    )
+                    # Prefer fair gap over raw gap
+                    price_gap = gap_data.get("fair_gap") or gap_data.get("raw_gap")
 
                 pair = MarketPair(
                     kalshi_market_id=kalshi_id,
