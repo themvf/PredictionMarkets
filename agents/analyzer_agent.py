@@ -20,6 +20,7 @@ from db.market_math import (
     cross_platform_gap, liquidity_score, overround,
     vig_adjusted_price, time_to_expiry_hours, expiry_urgency,
 )
+from llm.sanitize import sanitize_for_prompt
 
 
 class AnalyzerAgent(BaseAgent):
@@ -171,7 +172,7 @@ class AnalyzerAgent(BaseAgent):
 
         prompt = PROMPTS["gap_analysis"].format(
             platform_context=PLATFORM_CONTEXT,
-            kalshi_title=pair.get("kalshi_title", "Unknown"),
+            kalshi_title=sanitize_for_prompt(pair.get("kalshi_title", "Unknown")),
             kalshi_yes=_fmt_price(pair.get("kalshi_yes")),
             kalshi_no=_fmt_price(pair.get("kalshi_no")),
             kalshi_vig=_fmt_vig(gap_metrics.get("kalshi_vig")),
@@ -180,8 +181,8 @@ class AnalyzerAgent(BaseAgent):
             kalshi_liquidity=_fmt_vol(pair.get("kalshi_liquidity")),
             kalshi_liq_tier=kalshi_liq_tier,
             kalshi_expiry=_fmt_expiry(kalshi_expiry_h),
-            kalshi_category=pair.get("kalshi_category", "N/A"),
-            poly_title=pair.get("poly_title", "Unknown"),
+            kalshi_category=sanitize_for_prompt(pair.get("kalshi_category", "N/A"), max_length=80),
+            poly_title=sanitize_for_prompt(pair.get("poly_title", "Unknown")),
             poly_yes=_fmt_price(pair.get("poly_yes")),
             poly_no=_fmt_price(pair.get("poly_no")),
             poly_vig=_fmt_vig(gap_metrics.get("poly_vig")),
@@ -190,7 +191,7 @@ class AnalyzerAgent(BaseAgent):
             poly_liquidity=_fmt_vol(pair.get("poly_liquidity")),
             poly_liq_tier=poly_liq_tier,
             poly_expiry=_fmt_expiry(poly_expiry_h),
-            poly_category=pair.get("poly_category", "N/A"),
+            poly_category=sanitize_for_prompt(pair.get("poly_category", "N/A"), max_length=80),
             raw_gap=_fmt_price(gap_metrics.get("raw_gap")),
             fair_gap=_fmt_price(gap_metrics.get("fair_gap")),
             gap_direction=gap_direction,

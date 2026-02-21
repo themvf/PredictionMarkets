@@ -14,6 +14,7 @@ from typing import Any, Dict, List, Optional
 
 from .base import AgentResult, AgentStatus, BaseAgent
 from db.models import NormalizedMarket, MarketPair
+from llm.sanitize import sanitize_text, sanitize_market_fields
 
 
 class DiscoveryAgent(BaseAgent):
@@ -74,9 +75,16 @@ class DiscoveryAgent(BaseAgent):
         )
 
     def _normalize_kalshi(self, raw: Dict[str, Any]) -> NormalizedMarket:
-        """Convert Kalshi API response to NormalizedMarket."""
-        yes_price = raw.get("yes_ask") or raw.get("last_price")
-        no_price = raw.get("no_ask")
+        """Convert Kalshi API response to NormalizedMarket.
+
+        Sanitizes all text fields at the ingestion boundary — this is the
+        primary defense against prompt injection via Kalshi API data.
+        """
+        # Sanitize raw API data before extracting fields
+        clean = sanitize_market_fields(raw)
+
+        yes_price = clean.get("yes_ask") or clean.get("last_price")
+        no_price = clean.get("no_ask")
         if yes_price is not None:
             yes_price = yes_price / 100.0 if yes_price > 1 else yes_price
         if no_price is not None:
@@ -84,10 +92,10 @@ class DiscoveryAgent(BaseAgent):
 
         return NormalizedMarket(
             platform="kalshi",
-            platform_id=raw.get("ticker", ""),
-            title=raw.get("title", raw.get("subtitle", "")),
-            description=raw.get("rules_primary", ""),
-            category=raw.get("category", raw.get("series_ticker", "")),
+            platform_id=sanitize_text(raw.get("ticker", ""), max_length=50),
+            title=clean.get("title", clean.get("subtitle", "")),
+            description=clean.get("rules_primary", ""),
+            category=clean.get("category", clean.get("series_ticker", "")),
             status="active" if raw.get("status") == "open" else raw.get("status", ""),
             yes_price=yes_price,
             no_price=no_price,
@@ -99,7 +107,14 @@ class DiscoveryAgent(BaseAgent):
         )
 
     def _normalize_polymarket(self, raw: Dict[str, Any]) -> NormalizedMarket:
-        """Convert Polymarket Gamma API response to NormalizedMarket."""
+        """Convert Polymarket Gamma API response to NormalizedMarket.
+
+        Sanitizes all text fields at the ingestion boundary — this is the
+        primary defense against prompt injection via Polymarket API data.
+        """
+        # Sanitize raw API data before extracting fields
+        clean = sanitize_market_fields(raw)
+
         # Polymarket prices come as strings between "0" and "1"
         yes_price = None
         no_price = None
@@ -137,14 +152,16 @@ class DiscoveryAgent(BaseAgent):
             except (json.JSONDecodeError, TypeError):
                 tokens = []
 
-        condition_id = raw.get("conditionId", raw.get("id", ""))
+        condition_id = sanitize_text(
+            raw.get("conditionId", raw.get("id", "")), max_length=100,
+        )
 
         return NormalizedMarket(
             platform="polymarket",
             platform_id=condition_id,
-            title=raw.get("question", raw.get("title", "")),
-            description=raw.get("description", ""),
-            category=raw.get("category", raw.get("groupItemTitle", "")),
+            title=clean.get("question", clean.get("title", "")),
+            description=clean.get("description", ""),
+            category=clean.get("category", clean.get("groupItemTitle", "")),
             status="active" if raw.get("active") else "closed",
             yes_price=yes_price,
             no_price=no_price,
@@ -171,18 +188,23 @@ class DiscoveryAgent(BaseAgent):
             return 0
 
         # Include close_time for temporal matching
+        # Titles/categories are already sanitized at ingestion, but
+        # re-sanitize with stricter limits for prompt inclusion
+        from llm.sanitize import sanitize_for_prompt
         kalshi_list = [
             {
-                "id": m["id"], "title": m["title"],
-                "category": m["category"],
+                "id": m["id"],
+                "title": sanitize_for_prompt(m["title"], max_length=150),
+                "category": sanitize_for_prompt(m["category"], max_length=80),
                 "close_time": m.get("close_time", ""),
             }
             for m in kalshi_markets[:100]
         ]
         poly_list = [
             {
-                "id": m["id"], "title": m["title"],
-                "category": m["category"],
+                "id": m["id"],
+                "title": sanitize_for_prompt(m["title"], max_length=150),
+                "category": sanitize_for_prompt(m["category"], max_length=80),
                 "close_time": m.get("close_time", ""),
             }
             for m in poly_markets[:100]

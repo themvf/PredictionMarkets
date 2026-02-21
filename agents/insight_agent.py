@@ -20,6 +20,7 @@ from db.market_math import (
     implied_probability, overround, cross_platform_gap,
     liquidity_score, vig_adjusted_price,
 )
+from llm.sanitize import sanitize_for_prompt
 
 
 class InsightAgent(BaseAgent):
@@ -64,9 +65,11 @@ class InsightAgent(BaseAgent):
             self._format_gap_line(p) for p in gap_pairs[:10]
         ) or "No significant vig-adjusted price gaps detected."
 
-        # Recent alerts — with enriched context
+        # Recent alerts — with enriched context (sanitized for prompt safety)
         alerts_text = "\n".join(
-            f"- [{a['severity'].upper()}] {a['title']}: {a['message']}"
+            f"- [{a['severity'].upper()}] "
+            f"{sanitize_for_prompt(a['title'], max_length=100)}: "
+            f"{sanitize_for_prompt(a['message'], max_length=200)}"
             for a in alerts[:10]
         ) or "No recent alerts."
 
@@ -121,8 +124,9 @@ class InsightAgent(BaseAgent):
         price_str = f"${price:.2f}" if price is not None else "N/A"
         vig_str = f", vig: {vig:.1%}" if vig is not None else ""
 
+        safe_title = sanitize_for_prompt(m['title'], max_length=150)
         return (
-            f"- [{m['platform']}] {m['title']} — "
+            f"- [{m['platform']}] {safe_title} — "
             f"Implied prob: {prob_str} (price: {price_str}{vig_str}) | "
             f"Vol: ${vol:,.0f} [{liq_tier}]"
         )
@@ -142,9 +146,11 @@ class InsightAgent(BaseAgent):
         p_prob = f"{poly_yes:.0%}" if poly_yes else "N/A"
         fair_str = f"${fair_gap:.2f}" if fair_gap is not None else "N/A"
 
+        safe_k_title = sanitize_for_prompt(p.get('kalshi_title', 'Kalshi'), max_length=100)
+        safe_p_title = sanitize_for_prompt(p.get('poly_title', 'Poly'), max_length=100)
         return (
-            f"- {p.get('kalshi_title', 'Kalshi')}: {k_prob} vs "
-            f"{p.get('poly_title', 'Poly')}: {p_prob} "
+            f"- {safe_k_title}: {k_prob} vs "
+            f"{safe_p_title}: {p_prob} "
             f"(raw gap: ${raw_gap:.2f}, fair gap: {fair_str})"
         )
 
@@ -161,7 +167,9 @@ class InsightAgent(BaseAgent):
             return "No unacknowledged alerts to summarize."
 
         alerts_text = "\n".join(
-            f"- [{a['severity']}] {a['alert_type']}: {a['title']} — {a['message']}"
+            f"- [{a['severity']}] {a['alert_type']}: "
+            f"{sanitize_for_prompt(a['title'], max_length=100)} — "
+            f"{sanitize_for_prompt(a['message'], max_length=200)}"
             for a in alerts
         )
 

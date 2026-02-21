@@ -63,10 +63,14 @@ Your task: identify markets on Kalshi and Polymarket that ask the **same underly
 - Time horizon must match: same resolution date or close enough (within 48 hours).
 
 **Kalshi Markets:**
+<<<DATA>>>
 {kalshi_markets}
+<<<END_DATA>>>
 
 **Polymarket Markets:**
+<<<DATA>>>
 {polymarket_markets}
+<<<END_DATA>>>
 
 For each match, return:
 - confidence: 0.0-1.0 (0.9+ for exact same question, 0.7-0.9 for equivalent with minor wording differences)
@@ -93,6 +97,7 @@ Only include matches with confidence >= 0.7. If no matches, return {{"matches": 
 
 **Analyze this matched market pair:**
 
+<<<DATA>>>
 **Kalshi Market:**
 - Title: {kalshi_title}
 - Yes Price (raw): {kalshi_yes}
@@ -121,6 +126,7 @@ Only include matches with confidence >= 0.7. If no matches, return {{"matches": 
 - Raw Price Gap: {raw_gap} ({gap_direction})
 - Vig-Adjusted Fair Gap: {fair_gap}
 - Vig Differential: Kalshi {kalshi_vig} vs Polymarket {poly_vig}
+<<<END_DATA>>>
 
 **Analysis Framework (apply in order):**
 1. **Vig check**: If the fair gap is < $0.02, the raw gap is likely explained by vig differential alone. Note this explicitly.
@@ -151,13 +157,19 @@ Respond with JSON only:
 - Active unacknowledged alerts: {alert_count}
 
 **Top Markets by Volume (with implied probabilities):**
+<<<DATA>>>
 {top_markets}
+<<<END_DATA>>>
 
 **Notable Cross-Platform Gaps (vig-adjusted):**
+<<<DATA>>>
 {price_gaps}
+<<<END_DATA>>>
 
 **Recent Alerts:**
+<<<DATA>>>
 {recent_alerts}
+<<<END_DATA>>>
 
 **Generate a market intelligence briefing covering:**
 
@@ -183,7 +195,9 @@ Respond with the markdown report directly (not wrapped in JSON).""",
 {platform_context}
 
 **Active Alerts:**
+<<<DATA>>>
 {alerts}
+<<<END_DATA>>>
 
 **Produce an alert digest (200-300 words in markdown) that:**
 
