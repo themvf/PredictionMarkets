@@ -184,13 +184,20 @@ class PolymarketClient:
         return resp.json()
 
     def get_midpoints_batch(self, token_ids: List[str]) -> Dict[str, Optional[float]]:
-        """Fetch midpoints for multiple tokens."""
-        results = {}
-        for token_id in token_ids:
-            try:
-                results[token_id] = self.get_midpoint(token_id)
-            except Exception:
-                results[token_id] = None
+        """Fetch midpoints for multiple tokens concurrently."""
+        from concurrent.futures import ThreadPoolExecutor, as_completed
+        results: Dict[str, Optional[float]] = {}
+        with ThreadPoolExecutor(max_workers=20) as executor:
+            future_to_id = {
+                executor.submit(self.get_midpoint, tid): tid
+                for tid in token_ids
+            }
+            for future in as_completed(future_to_id):
+                tid = future_to_id[future]
+                try:
+                    results[tid] = future.result()
+                except Exception:
+                    results[tid] = None
         return results
 
     def health_check(self) -> bool:

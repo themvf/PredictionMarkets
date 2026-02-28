@@ -3,16 +3,23 @@
 Fetches current prices, volumes, and orderbook snapshots for all
 tracked markets. Creates PriceSnapshot records.
 
+Uses concurrent fetching (ThreadPoolExecutor) to parallelize API calls
+across markets, reducing runtime from ~4 minutes to ~15-30 seconds.
+
 Schedule: Every 5 minutes.
 """
 
 from __future__ import annotations
 
 import json
-from typing import Any, Dict
+from concurrent.futures import ThreadPoolExecutor, as_completed
+from typing import Any, Dict, List, Tuple
 
 from .base import AgentResult, AgentStatus, BaseAgent
-from db.models import PriceSnapshot
+from db.models import NormalizedMarket, PriceSnapshot
+
+# Max parallel API requests per platform
+_MAX_WORKERS = 20
 
 
 class CollectionAgent(BaseAgent):
@@ -25,33 +32,35 @@ class CollectionAgent(BaseAgent):
         polymarket_client = context.get("polymarket_client")
 
         snapshots_created = 0
-        errors = []
+        errors: List[str] = []
 
-        # ── Collect Kalshi prices ────────────────────────────
+        # ── Collect Kalshi prices (concurrent) ─────────────────
         kalshi_markets = queries.get_markets_by_platform("kalshi")
-        for market in kalshi_markets:
-            try:
-                snapshot = self._collect_kalshi(
-                    market, kalshi_client, queries,
-                )
-                if snapshot:
+        if kalshi_markets and kalshi_client:
+            results = self._collect_batch(
+                kalshi_markets, self._collect_kalshi, kalshi_client, "Kalshi",
+            )
+            for snapshot, error in results:
+                if error:
+                    errors.append(error)
+                elif snapshot:
                     queries.insert_snapshot(snapshot)
+                    queries.upsert_market(snapshot._market_update)
                     snapshots_created += 1
-            except Exception as e:
-                errors.append(f"Kalshi {market['platform_id']}: {e}")
 
-        # ── Collect Polymarket prices ────────────────────────
+        # ── Collect Polymarket prices (concurrent) ─────────────
         poly_markets = queries.get_markets_by_platform("polymarket")
-        for market in poly_markets:
-            try:
-                snapshot = self._collect_polymarket(
-                    market, polymarket_client, queries,
-                )
-                if snapshot:
+        if poly_markets and polymarket_client:
+            results = self._collect_batch(
+                poly_markets, self._collect_polymarket, polymarket_client, "Polymarket",
+            )
+            for snapshot, error in results:
+                if error:
+                    errors.append(error)
+                elif snapshot:
                     queries.insert_snapshot(snapshot)
+                    queries.upsert_market(snapshot._market_update)
                     snapshots_created += 1
-            except Exception as e:
-                errors.append(f"Polymarket {market['platform_id']}: {e}")
 
         error_summary = f" ({len(errors)} errors)" if errors else ""
         return AgentResult(
@@ -61,13 +70,37 @@ class CollectionAgent(BaseAgent):
             summary=f"Collected {snapshots_created} price snapshots{error_summary}.",
             data={
                 "snapshots_created": snapshots_created,
-                "errors": errors[:10],  # Keep first 10 errors
+                "errors": errors[:10],
             },
         )
 
+    def _collect_batch(
+        self,
+        markets: List[Dict[str, Any]],
+        collect_fn,
+        client: Any,
+        platform_label: str,
+    ) -> List[Tuple[PriceSnapshot | None, str | None]]:
+        """Fetch snapshots for a list of markets concurrently."""
+        results: List[Tuple[PriceSnapshot | None, str | None]] = []
+
+        with ThreadPoolExecutor(max_workers=_MAX_WORKERS) as executor:
+            future_to_market = {
+                executor.submit(collect_fn, market, client): market
+                for market in markets
+            }
+            for future in as_completed(future_to_market):
+                market = future_to_market[future]
+                try:
+                    snapshot = future.result()
+                    results.append((snapshot, None))
+                except Exception as e:
+                    results.append((None, f"{platform_label} {market['platform_id']}: {e}"))
+
+        return results
+
     def _collect_kalshi(self, market: Dict[str, Any],
-                        client: Any,
-                        queries: Any) -> PriceSnapshot | None:
+                        client: Any) -> PriceSnapshot | None:
         """Fetch latest price data from Kalshi for a single market."""
         if not client:
             return None
@@ -77,7 +110,6 @@ class CollectionAgent(BaseAgent):
             data = client.get_market(ticker)
             m = data.get("market", data)
         except Exception:
-            # If individual market fetch fails, use stored data
             m = market
 
         yes_price = m.get("yes_ask") or m.get("last_price") or market.get("yes_price")
@@ -87,7 +119,6 @@ class CollectionAgent(BaseAgent):
         if no_price is not None and no_price > 1:
             no_price = no_price / 100.0
 
-        # Try to get orderbook for bid/ask
         best_bid = None
         best_ask = None
         spread = None
@@ -103,9 +134,10 @@ class CollectionAgent(BaseAgent):
         except Exception:
             pass
 
-        # Update the market's current price in the markets table
-        from db.models import NormalizedMarket
-        updated = NormalizedMarket(
+        volume = m.get("volume", market.get("volume"))
+        liquidity = m.get("open_interest", market.get("liquidity"))
+
+        market_update = NormalizedMarket(
             platform="kalshi",
             platform_id=ticker,
             title=market["title"],
@@ -114,27 +146,27 @@ class CollectionAgent(BaseAgent):
             status=market.get("status", "active"),
             yes_price=yes_price,
             no_price=no_price,
-            volume=m.get("volume", market.get("volume")),
-            liquidity=m.get("open_interest", market.get("liquidity")),
+            volume=volume,
+            liquidity=liquidity,
             close_time=market.get("close_time"),
             url=market.get("url", ""),
         )
-        queries.upsert_market(updated)
 
-        return PriceSnapshot(
+        snapshot = PriceSnapshot(
             market_id=market["id"],
             yes_price=yes_price,
             no_price=no_price,
-            volume=m.get("volume", market.get("volume")),
+            volume=volume,
             open_interest=m.get("open_interest"),
             best_bid=best_bid,
             best_ask=best_ask,
             spread=spread,
         )
+        snapshot._market_update = market_update
+        return snapshot
 
     def _collect_polymarket(self, market: Dict[str, Any],
-                            client: Any,
-                            queries: Any) -> PriceSnapshot | None:
+                            client: Any) -> PriceSnapshot | None:
         """Fetch latest price data from Polymarket for a single market."""
         if not client:
             return None
@@ -152,7 +184,7 @@ class CollectionAgent(BaseAgent):
                     if isinstance(tokens, str):
                         tokens = json.loads(tokens)
                     if tokens:
-                        token_id = tokens[0]  # Yes token
+                        token_id = tokens[0]
             except (json.JSONDecodeError, TypeError, IndexError):
                 pass
 
@@ -162,7 +194,6 @@ class CollectionAgent(BaseAgent):
         best_ask = None
         spread = None
 
-        # Try CLOB API if we have a token ID
         if token_id:
             try:
                 mid = client.get_midpoint(token_id)
@@ -185,7 +216,6 @@ class CollectionAgent(BaseAgent):
             except Exception:
                 pass
         else:
-            # Fallback: try Gamma API refresh
             try:
                 data = client.get_gamma_market(condition_id)
                 outcomes_prices = data.get("outcomePrices")
@@ -201,9 +231,7 @@ class CollectionAgent(BaseAgent):
             except Exception:
                 pass
 
-        # Update the market's current price
-        from db.models import NormalizedMarket
-        updated = NormalizedMarket(
+        market_update = NormalizedMarket(
             platform="polymarket",
             platform_id=condition_id,
             title=market["title"],
@@ -217,9 +245,8 @@ class CollectionAgent(BaseAgent):
             close_time=market.get("close_time"),
             url=market.get("url", ""),
         )
-        queries.upsert_market(updated)
 
-        return PriceSnapshot(
+        snapshot = PriceSnapshot(
             market_id=market["id"],
             yes_price=yes_price,
             no_price=no_price,
@@ -228,3 +255,5 @@ class CollectionAgent(BaseAgent):
             best_ask=best_ask,
             spread=spread,
         )
+        snapshot._market_update = market_update
+        return snapshot

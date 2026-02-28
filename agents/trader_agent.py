@@ -3,15 +3,21 @@
 Fetches Polymarket leaderboard data across categories and time periods,
 upserts trader profiles into the traders table.
 
+Uses concurrent fetching to parallelize leaderboard API calls
+across category/period combinations.
+
 Schedule: Every 30 minutes.
 """
 
 from __future__ import annotations
 
-from typing import Any, Dict
+from concurrent.futures import ThreadPoolExecutor, as_completed
+from typing import Any, Dict, List, Tuple
 
 from .base import AgentResult, AgentStatus, BaseAgent
 from db.models import Trader
+
+_MAX_WORKERS = 10
 
 
 class TraderAgent(BaseAgent):
@@ -30,41 +36,56 @@ class TraderAgent(BaseAgent):
                 items_processed=0,
             )
 
-        traders_upserted = 0
-        errors = []
-
         categories = ["OVERALL", "POLITICS", "SPORTS", "CRYPTO", "ECONOMICS"]
         time_periods = ["ALL", "MONTH", "WEEK"]
-        seen_wallets: set = set()
+        errors: List[str] = []
 
-        for category in categories:
-            for period in time_periods:
+        # Build all category/period combinations
+        combos = [
+            (cat, period) for cat in categories for period in time_periods
+        ]
+
+        # Fetch all leaderboards concurrently
+        all_entries: List[Dict[str, Any]] = []
+        with ThreadPoolExecutor(max_workers=_MAX_WORKERS) as executor:
+            future_to_combo = {
+                executor.submit(
+                    polymarket_client.get_leaderboard,
+                    category=cat,
+                    time_period=period,
+                    order_by="PNL",
+                    limit=50,
+                ): (cat, period)
+                for cat, period in combos
+            }
+            for future in as_completed(future_to_combo):
+                cat, period = future_to_combo[future]
                 try:
-                    leaders = polymarket_client.get_leaderboard(
-                        category=category,
-                        time_period=period,
-                        order_by="PNL",
-                        limit=50,
-                    )
-                    for entry in leaders:
-                        wallet = entry.get("proxyWallet", "")
-                        if not wallet or wallet in seen_wallets:
-                            continue
-                        seen_wallets.add(wallet)
-
-                        trader = Trader(
-                            proxy_wallet=wallet,
-                            user_name=entry.get("userName", ""),
-                            profile_image=entry.get("profileImage", ""),
-                            x_username=entry.get("xUsername", ""),
-                            verified_badge=bool(entry.get("verifiedBadge", False)),
-                            total_pnl=entry.get("pnl"),
-                            total_volume=entry.get("vol"),
-                        )
-                        queries.upsert_trader(trader)
-                        traders_upserted += 1
+                    leaders = future.result()
+                    all_entries.extend(leaders)
                 except Exception as e:
-                    errors.append(f"Leaderboard {category}/{period}: {e}")
+                    errors.append(f"Leaderboard {cat}/{period}: {e}")
+
+        # Deduplicate and upsert
+        seen_wallets: set = set()
+        traders_upserted = 0
+        for entry in all_entries:
+            wallet = entry.get("proxyWallet", "")
+            if not wallet or wallet in seen_wallets:
+                continue
+            seen_wallets.add(wallet)
+
+            trader = Trader(
+                proxy_wallet=wallet,
+                user_name=entry.get("userName", ""),
+                profile_image=entry.get("profileImage", ""),
+                x_username=entry.get("xUsername", ""),
+                verified_badge=bool(entry.get("verifiedBadge", False)),
+                total_pnl=entry.get("pnl"),
+                total_volume=entry.get("vol"),
+            )
+            queries.upsert_trader(trader)
+            traders_upserted += 1
 
         error_summary = f" ({len(errors)} errors)" if errors else ""
         return AgentResult(
