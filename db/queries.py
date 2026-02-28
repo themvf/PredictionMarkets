@@ -60,19 +60,32 @@ class MarketQueries:
             conn.commit()
             return row["id"]
 
-    def get_all_markets(self, platform: Optional[str] = None,
-                        status: str = "active") -> List[Dict[str, Any]]:
+    def get_distinct_categories(self, status: str = "active") -> List[str]:
+        """Return sorted list of non-empty categories present in the markets table."""
         with self.db._connect() as conn:
+            rows = conn.execute(
+                "SELECT DISTINCT category FROM markets WHERE status=? AND category != '' ORDER BY category",
+                (status,),
+            ).fetchall()
+            return [r["category"] for r in rows]
+
+    def get_all_markets(self, platform: Optional[str] = None,
+                        status: str = "active",
+                        category: Optional[str] = None) -> List[Dict[str, Any]]:
+        with self.db._connect() as conn:
+            clauses = ["status=?"]
+            params: list = [status]
             if platform:
-                rows = conn.execute(
-                    "SELECT * FROM markets WHERE platform=? AND status=? ORDER BY volume DESC",
-                    (platform, status),
-                ).fetchall()
-            else:
-                rows = conn.execute(
-                    "SELECT * FROM markets WHERE status=? ORDER BY volume DESC",
-                    (status,),
-                ).fetchall()
+                clauses.append("platform=?")
+                params.append(platform)
+            if category:
+                clauses.append("category=?")
+                params.append(category)
+            where = " AND ".join(clauses)
+            rows = conn.execute(
+                f"SELECT * FROM markets WHERE {where} ORDER BY volume DESC",
+                params,
+            ).fetchall()
             return [dict(r) for r in rows]
 
     def get_market_by_id(self, market_id: int) -> Optional[Dict[str, Any]]:

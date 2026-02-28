@@ -20,7 +20,7 @@ queries = init_queries(db)
 st.title("Market Overview")
 
 # Filters
-col1, col2, col3 = st.columns(3)
+col1, col2, col3, col_cat = st.columns(4)
 with col1:
     platform_filter = st.selectbox(
         "Platform",
@@ -30,6 +30,9 @@ with col2:
     status_filter = st.selectbox("Status", ["active", "closed", "settled"])
 with col3:
     search_query = st.text_input("Search", placeholder="Filter by title...")
+with col_cat:
+    categories = queries.get_distinct_categories(status=status_filter)
+    category_filter = st.selectbox("Category", ["All"] + categories)
 
 # Additional filters
 col4, col5 = st.columns(2)
@@ -43,7 +46,8 @@ if search_query:
     markets = queries.search_markets(search_query)
 else:
     platform = None if platform_filter == "All" else platform_filter
-    markets = queries.get_all_markets(platform=platform, status=status_filter)
+    cat = None if category_filter == "All" else category_filter
+    markets = queries.get_all_markets(platform=platform, status=status_filter, category=cat)
 
 # Apply volume filter
 if vol_min > 0:
