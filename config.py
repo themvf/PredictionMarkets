@@ -63,6 +63,15 @@ class OpenAIConfig:
 
 
 @dataclass
+class SlackConfig:
+    webhook_url: str = ""
+
+    @classmethod
+    def from_env(cls) -> SlackConfig:
+        return cls(webhook_url=os.getenv("SLACK_WEBHOOK_URL", ""))
+
+
+@dataclass
 class SchedulerConfig:
     discovery_interval_minutes: int = 30
     collection_interval_minutes: int = 5
@@ -89,6 +98,7 @@ class AppConfig:
     kalshi: KalshiConfig = field(default_factory=KalshiConfig)
     polymarket: PolymarketConfig = field(default_factory=PolymarketConfig)
     openai: OpenAIConfig = field(default_factory=OpenAIConfig)
+    slack: SlackConfig = field(default_factory=SlackConfig)
     scheduler: SchedulerConfig = field(default_factory=SchedulerConfig)
     alerts: AlertRules = field(default_factory=AlertRules)
     db_path: Path = DB_PATH
@@ -99,6 +109,7 @@ class AppConfig:
             kalshi=KalshiConfig.from_env(),
             polymarket=PolymarketConfig.from_env(),
             openai=OpenAIConfig.from_env(),
+            slack=SlackConfig.from_env(),
         )
 
 

@@ -10,7 +10,7 @@ PROJECT_DIR = Path(__file__).resolve().parent.parent
 if str(PROJECT_DIR) not in sys.path:
     sys.path.insert(0, str(PROJECT_DIR))
 
-from streamlit_app import init_config, init_database, init_queries, get_context, init_registry
+from streamlit_app import init_config, init_database, init_queries, get_context, init_registry, init_slack_notifier
 
 st.set_page_config(page_title="Agent Status", page_icon="🤖", layout="wide")
 
@@ -102,11 +102,21 @@ for agent_name, info in AGENT_INFO.items():
                     try:
                         context = get_context()
                         registry = init_registry()
+                        pre_run_alerts = queries.get_alerts(limit=50)
+                        pre_run_ids = {a["id"] for a in pre_run_alerts}
                         result = registry.run_one(agent_name, context)
                         if result.error:
                             st.error(f"Error: {result.error}")
                         else:
                             st.success(result.summary)
+                        # Slack notification
+                        notifier = init_slack_notifier(config)
+                        if notifier.enabled:
+                            new_alerts = [
+                                a for a in queries.get_alerts(limit=50)
+                                if a["id"] not in pre_run_ids
+                            ]
+                            notifier.notify_agent_run(result, new_alerts)
                         st.rerun()
                     except Exception as e:
                         st.error(f"Failed: {e}")
@@ -174,12 +184,23 @@ if st.button("Run All Agents", type="primary"):
         try:
             context = get_context()
             registry = init_registry()
+            notifier = init_slack_notifier(config)
+            pre_run_alerts = queries.get_alerts(limit=200)
+            pre_run_ids = {a["id"] for a in pre_run_alerts}
             results = registry.run_all(context)
             for r in results:
                 if r.error:
                     st.error(f"{r.agent_name}: {r.error}")
                 else:
                     st.success(f"{r.agent_name}: {r.summary}")
+                # Slack notification per agent
+                if notifier.enabled:
+                    new_alerts = [
+                        a for a in queries.get_alerts(limit=200)
+                        if a["id"] not in pre_run_ids
+                    ]
+                    notifier.notify_agent_run(r, new_alerts)
+                    pre_run_ids.update(a["id"] for a in new_alerts)
             st.rerun()
         except Exception as e:
             st.error(f"Failed: {e}")

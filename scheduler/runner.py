@@ -11,12 +11,14 @@ Runs agents on configurable schedules:
 from __future__ import annotations
 
 import logging
+from datetime import datetime, timezone
 from typing import Any, Callable, Dict, Optional
 
 from apscheduler.schedulers.background import BackgroundScheduler
 
 from agents.registry import AgentRegistry
 from config import SchedulerConfig
+from notifications.slack import SlackNotifier
 
 logger = logging.getLogger(__name__)
 
@@ -24,17 +26,24 @@ logger = logging.getLogger(__name__)
 class SchedulerRunner:
     def __init__(self, registry: AgentRegistry,
                  context_factory: Callable[[], Dict[str, Any]],
-                 config: Optional[SchedulerConfig] = None) -> None:
+                 config: Optional[SchedulerConfig] = None,
+                 slack_notifier: Optional[SlackNotifier] = None) -> None:
         self.registry = registry
         self.context_factory = context_factory
         self.config = config or SchedulerConfig()
+        self.slack_notifier = slack_notifier
         self.scheduler = BackgroundScheduler()
         self._running = False
 
     def _run_agent(self, agent_name: str) -> None:
-        """Execute a single agent with fresh context."""
+        """Execute a single agent with fresh context, then send Slack notification."""
         try:
             context = self.context_factory()
+
+            # Capture alert count before run so we can find new ones
+            queries = context.get("queries")
+            pre_run_time = datetime.now(timezone.utc).isoformat()
+
             result = self.registry.run_one(agent_name, context)
             logger.info(
                 "Agent '%s' completed: %s (%d items in %.1fs)",
@@ -43,6 +52,24 @@ class SchedulerRunner:
             )
             if result.error:
                 logger.error("Agent '%s' error: %s", agent_name, result.error)
+
+            # Send Slack notification
+            if self.slack_notifier and self.slack_notifier.enabled:
+                recent_alerts = None
+                if queries:
+                    try:
+                        all_recent = queries.get_alerts(limit=50)
+                        recent_alerts = [
+                            a for a in all_recent
+                            if (a.get("triggered_at") or "") >= pre_run_time
+                        ]
+                    except Exception:
+                        pass
+                try:
+                    self.slack_notifier.notify_agent_run(result, recent_alerts)
+                except Exception:
+                    logger.exception("Slack notification failed for '%s'", agent_name)
+
         except Exception:
             logger.exception("Failed to run agent '%s'", agent_name)
 

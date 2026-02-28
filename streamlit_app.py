@@ -92,6 +92,13 @@ def init_registry():
     return registry
 
 
+@st.cache_resource
+def init_slack_notifier(config: AppConfig):
+    """Initialize Slack notifier if webhook URL is configured."""
+    from notifications.slack import SlackNotifier
+    return SlackNotifier(config.slack.webhook_url)
+
+
 def get_context() -> dict:
     """Build shared context dict for agent execution."""
     config = init_config()
@@ -104,6 +111,7 @@ def get_context() -> dict:
         "db": db,
         "queries": queries,
         "alert_rules": config.alerts,
+        "slack_notifier": init_slack_notifier(config),
         **clients,
     }
     return context
@@ -129,11 +137,14 @@ def main():
         kalshi_ok = "kalshi_client" in clients
         poly_ok = "polymarket_client" in clients
         openai_ok = "openai_client" in clients
+        slack_ok = init_slack_notifier(config).enabled
 
-        col1, col2, col3 = st.columns(3)
+        col1, col2 = st.columns(2)
         col1.metric("Kalshi", "OK" if kalshi_ok else "OFF")
         col2.metric("Poly", "OK" if poly_ok else "OFF")
+        col3, col4 = st.columns(2)
         col3.metric("GPT-4o", "OK" if openai_ok else "OFF")
+        col4.metric("Slack", "OK" if slack_ok else "OFF")
 
         if not kalshi_ok:
             st.warning(f"Kalshi: {clients.get('kalshi_error', 'Not configured')}")
