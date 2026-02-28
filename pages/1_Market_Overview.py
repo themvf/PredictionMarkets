@@ -31,12 +31,29 @@ with col2:
 with col3:
     search_query = st.text_input("Search", placeholder="Filter by title...")
 
+# Additional filters
+col4, col5 = st.columns(2)
+with col4:
+    vol_min = st.number_input("Min Volume ($)", 0, 10000000, 0, 1000)
+with col5:
+    liq_filter = st.selectbox("Liquidity Tier", ["All", "deep", "moderate", "thin", "micro"])
+
 # Fetch data
 if search_query:
     markets = queries.search_markets(search_query)
 else:
     platform = None if platform_filter == "All" else platform_filter
     markets = queries.get_all_markets(platform=platform, status=status_filter)
+
+# Apply volume filter
+if vol_min > 0:
+    markets = [m for m in markets if (m.get("volume") or 0) >= vol_min]
+
+# Apply liquidity tier filter
+if liq_filter != "All":
+    from db.market_math import liquidity_score
+    markets = [m for m in markets
+               if liquidity_score(m.get("volume"), m.get("liquidity")) == liq_filter]
 
 if not markets:
     st.info("No markets found. Run the Discovery Agent to populate markets.")

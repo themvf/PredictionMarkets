@@ -25,7 +25,7 @@ col1, col2, col3 = st.columns(3)
 with col1:
     type_filter = st.selectbox(
         "Alert Type",
-        ["All", "price_move", "volume_spike", "arbitrage", "closing_soon", "keyword"],
+        ["All", "price_move", "volume_spike", "arbitrage", "closing_soon", "keyword", "whale_trade"],
     )
 with col2:
     ack_filter = st.selectbox(
@@ -81,6 +81,7 @@ for alert in alerts:
         "arbitrage": "🔄",
         "closing_soon": "⏰",
         "keyword": "🔍",
+        "whale_trade": "🐋",
     }.get(alert.get("alert_type", ""), "📋")
 
     with st.container(border=True):

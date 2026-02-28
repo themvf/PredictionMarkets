@@ -78,6 +78,8 @@ def init_registry():
     from agents.analyzer_agent import AnalyzerAgent
     from agents.alert_agent import AlertAgent
     from agents.insight_agent import InsightAgent
+    from agents.trader_agent import TraderAgent
+    from agents.whale_agent import WhaleAgent
 
     registry = AgentRegistry()
     registry.register(DiscoveryAgent())
@@ -85,6 +87,8 @@ def init_registry():
     registry.register(AnalyzerAgent())
     registry.register(AlertAgent())
     registry.register(InsightAgent())
+    registry.register(TraderAgent())
+    registry.register(WhaleAgent())
     return registry
 
 

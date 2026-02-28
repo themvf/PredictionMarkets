@@ -1,4 +1,4 @@
-"""Polymarket API client — Gamma (discovery) + CLOB (pricing).
+"""Polymarket API client — Gamma (discovery) + CLOB (pricing) + Data API (traders).
 
 Gamma API: https://gamma-api.polymarket.com — no auth required
   - /markets — paginated market discovery
@@ -9,6 +9,13 @@ CLOB API: https://clob.polymarket.com — no auth for read operations
   - /price — current midpoint price
   - /midpoint — midpoint for a token
   - /spreads — bid/ask spread
+
+Data API: https://data-api.polymarket.com — no auth for read operations
+  - /v1/leaderboard — trader rankings by PnL/volume
+  - /trades — trade history (filterable by user, market, size)
+  - /positions — user positions with P&L
+  - /value — portfolio value
+  - /holders — top holders for a market
 
 Uses py-clob-client SDK for CLOB operations when available,
 falls back to raw requests.
@@ -29,6 +36,7 @@ class PolymarketClient:
         self.config = config
         self.gamma_url = config.gamma_url
         self.clob_url = config.clob_url
+        self.data_api_url = config.data_api_url
         self.session = requests.Session()
         self.session.headers.update({
             "Accept": "application/json",
@@ -196,3 +204,114 @@ class PolymarketClient:
             return resp.status_code == 200
         except Exception:
             return False
+
+    # ── Data API (Leaderboard, Trades, Positions) ─────────
+
+    def get_leaderboard(self, category: str = "OVERALL",
+                        time_period: str = "ALL",
+                        order_by: str = "PNL",
+                        limit: int = 25,
+                        offset: int = 0) -> List[Dict[str, Any]]:
+        """Fetch trader leaderboard from Data API.
+
+        Categories: OVERALL, POLITICS, SPORTS, CRYPTO, CULTURE,
+                    MENTIONS, WEATHER, ECONOMICS, TECH, FINANCE
+        Time periods: DAY, WEEK, MONTH, ALL
+        Order by: PNL, VOL
+        """
+        params: Dict[str, Any] = {
+            "category": category,
+            "timePeriod": time_period,
+            "orderBy": order_by,
+            "limit": limit,
+            "offset": offset,
+        }
+        resp = self.session.get(
+            f"{self.data_api_url}/v1/leaderboard",
+            params=params,
+            timeout=30,
+        )
+        resp.raise_for_status()
+        return resp.json()
+
+    def get_trades(self, user: Optional[str] = None,
+                   market: Optional[str] = None,
+                   side: Optional[str] = None,
+                   limit: int = 100,
+                   offset: int = 0,
+                   filter_type: Optional[str] = "CASH",
+                   filter_amount: Optional[float] = None) -> List[Dict[str, Any]]:
+        """Fetch trades from Data API.
+
+        Can filter by user wallet, market condition ID, side (BUY/SELL),
+        and minimum trade size.
+        """
+        params: Dict[str, Any] = {
+            "limit": limit,
+            "offset": offset,
+        }
+        if user:
+            params["user"] = user
+        if market:
+            params["market"] = market
+        if side:
+            params["side"] = side
+        if filter_type and filter_amount is not None:
+            params["filterType"] = filter_type
+            params["filterAmount"] = filter_amount
+        resp = self.session.get(
+            f"{self.data_api_url}/trades",
+            params=params,
+            timeout=30,
+        )
+        resp.raise_for_status()
+        return resp.json()
+
+    def get_positions(self, user: str,
+                      market: Optional[str] = None,
+                      size_threshold: float = 1.0,
+                      limit: int = 100,
+                      offset: int = 0,
+                      sort_by: str = "CURRENT") -> List[Dict[str, Any]]:
+        """Fetch user positions from Data API.
+
+        sort_by options: TOKENS, CURRENT, INITIAL, CASHPNL,
+                         PERCENTPNL, TITLE, RESOLVING, PRICE
+        """
+        params: Dict[str, Any] = {
+            "user": user,
+            "sizeThreshold": size_threshold,
+            "limit": limit,
+            "offset": offset,
+            "sortBy": sort_by,
+        }
+        if market:
+            params["market"] = market
+        resp = self.session.get(
+            f"{self.data_api_url}/positions",
+            params=params,
+            timeout=30,
+        )
+        resp.raise_for_status()
+        return resp.json()
+
+    def get_portfolio_value(self, user: str) -> Dict[str, Any]:
+        """Fetch total portfolio value for a user."""
+        resp = self.session.get(
+            f"{self.data_api_url}/value",
+            params={"user": user},
+            timeout=30,
+        )
+        resp.raise_for_status()
+        return resp.json()
+
+    def get_market_holders(self, market: str,
+                           limit: int = 100) -> List[Dict[str, Any]]:
+        """Fetch top holders for a specific market."""
+        resp = self.session.get(
+            f"{self.data_api_url}/holders",
+            params={"market": market, "limit": limit},
+            timeout=30,
+        )
+        resp.raise_for_status()
+        return resp.json()

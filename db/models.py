@@ -109,3 +109,61 @@ class AgentLog:
     items_processed: int = 0
     summary: str = ""
     error: Optional[str] = None
+
+
+@dataclass
+class Trader:
+    """Polymarket trader profile from Data API leaderboard."""
+    id: Optional[int] = None
+    proxy_wallet: str = ""
+    user_name: str = ""
+    profile_image: str = ""
+    x_username: str = ""
+    verified_badge: bool = False
+    total_pnl: Optional[float] = None
+    total_volume: Optional[float] = None
+    portfolio_value: Optional[float] = None
+    first_seen: Optional[str] = None
+    last_updated: Optional[str] = None
+
+
+@dataclass
+class WhaleTrade:
+    """Large trade from Polymarket Data API."""
+    id: Optional[int] = None
+    trader_id: Optional[int] = None
+    proxy_wallet: str = ""
+    condition_id: str = ""
+    market_title: str = ""
+    side: str = ""                      # BUY or SELL
+    size: Optional[float] = None        # token size
+    price: Optional[float] = None
+    usdc_size: Optional[float] = None   # USD value
+    outcome: str = ""
+    outcome_index: Optional[int] = None
+    transaction_hash: str = ""
+    trade_timestamp: Optional[int] = None
+    event_slug: str = ""
+    created_at: Optional[str] = None
+
+
+@dataclass
+class TraderPosition:
+    """Snapshot of a trader's position in a market."""
+    id: Optional[int] = None
+    trader_id: Optional[int] = None
+    proxy_wallet: str = ""
+    condition_id: str = ""
+    market_title: str = ""
+    outcome: str = ""
+    size: Optional[float] = None
+    avg_price: Optional[float] = None
+    initial_value: Optional[float] = None
+    current_value: Optional[float] = None
+    cash_pnl: Optional[float] = None
+    percent_pnl: Optional[float] = None
+    realized_pnl: Optional[float] = None
+    cur_price: Optional[float] = None
+    redeemable: bool = False
+    event_slug: str = ""
+    snapshot_time: Optional[str] = None

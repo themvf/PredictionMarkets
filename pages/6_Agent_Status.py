@@ -19,7 +19,7 @@ db = init_database(config)
 queries = init_queries(db)
 
 st.title("Agent Status")
-st.markdown("Monitor and control the 5 AI agents powering the platform.")
+st.markdown("Monitor and control the 7 AI agents powering the platform.")
 
 AGENT_INFO = {
     "discovery": {
@@ -46,6 +46,16 @@ AGENT_INFO = {
         "description": "Generates natural language market intelligence briefings using GPT-4o",
         "schedule": "Every 60 min",
         "uses_llm": True,
+    },
+    "trader": {
+        "description": "Fetches Polymarket leaderboard data, upserts trader profiles across categories and time periods",
+        "schedule": "Every 30 min",
+        "uses_llm": False,
+    },
+    "whale": {
+        "description": "Monitors large Polymarket trades, stores whale activity, generates whale alerts",
+        "schedule": "Every 5 min",
+        "uses_llm": False,
     },
 }
 

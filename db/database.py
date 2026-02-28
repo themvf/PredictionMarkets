@@ -119,6 +119,60 @@ class DatabaseManager:
                     error TEXT
                 );
 
+                -- Trader intelligence tables
+                CREATE TABLE IF NOT EXISTS traders (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    proxy_wallet TEXT NOT NULL UNIQUE,
+                    user_name TEXT DEFAULT '',
+                    profile_image TEXT DEFAULT '',
+                    x_username TEXT DEFAULT '',
+                    verified_badge INTEGER DEFAULT 0,
+                    total_pnl REAL,
+                    total_volume REAL,
+                    portfolio_value REAL,
+                    first_seen TEXT DEFAULT (datetime('now')),
+                    last_updated TEXT DEFAULT (datetime('now'))
+                );
+
+                CREATE TABLE IF NOT EXISTS whale_trades (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    trader_id INTEGER REFERENCES traders(id),
+                    proxy_wallet TEXT NOT NULL,
+                    condition_id TEXT DEFAULT '',
+                    market_title TEXT DEFAULT '',
+                    side TEXT DEFAULT '',
+                    size REAL,
+                    price REAL,
+                    usdc_size REAL,
+                    outcome TEXT DEFAULT '',
+                    outcome_index INTEGER,
+                    transaction_hash TEXT DEFAULT '',
+                    trade_timestamp INTEGER,
+                    event_slug TEXT DEFAULT '',
+                    created_at TEXT DEFAULT (datetime('now')),
+                    UNIQUE(transaction_hash)
+                );
+
+                CREATE TABLE IF NOT EXISTS trader_positions (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    trader_id INTEGER REFERENCES traders(id),
+                    proxy_wallet TEXT NOT NULL,
+                    condition_id TEXT DEFAULT '',
+                    market_title TEXT DEFAULT '',
+                    outcome TEXT DEFAULT '',
+                    size REAL,
+                    avg_price REAL,
+                    initial_value REAL,
+                    current_value REAL,
+                    cash_pnl REAL,
+                    percent_pnl REAL,
+                    realized_pnl REAL,
+                    cur_price REAL,
+                    redeemable INTEGER DEFAULT 0,
+                    event_slug TEXT DEFAULT '',
+                    snapshot_time TEXT DEFAULT (datetime('now'))
+                );
+
                 -- Performance indexes
                 CREATE INDEX IF NOT EXISTS idx_price_snapshots_market_time
                     ON price_snapshots(market_id, timestamp);
@@ -128,5 +182,15 @@ class DatabaseManager:
                     ON alerts(triggered_at);
                 CREATE INDEX IF NOT EXISTS idx_agent_logs_name
                     ON agent_logs(agent_name, started_at);
+                CREATE INDEX IF NOT EXISTS idx_traders_wallet
+                    ON traders(proxy_wallet);
+                CREATE INDEX IF NOT EXISTS idx_whale_trades_timestamp
+                    ON whale_trades(trade_timestamp);
+                CREATE INDEX IF NOT EXISTS idx_whale_trades_trader
+                    ON whale_trades(trader_id, trade_timestamp);
+                CREATE INDEX IF NOT EXISTS idx_whale_trades_size
+                    ON whale_trades(usdc_size);
+                CREATE INDEX IF NOT EXISTS idx_trader_positions_trader
+                    ON trader_positions(trader_id, snapshot_time);
             """)
             conn.commit()

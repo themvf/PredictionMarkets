@@ -54,6 +54,8 @@ class SchedulerRunner:
             "analyzer": self.config.analyzer_interval_minutes,
             "alert": self.config.alert_interval_minutes,
             "insight": self.config.insight_interval_minutes,
+            "trader": self.config.trader_interval_minutes,
+            "whale": self.config.whale_interval_minutes,
         }
 
         for agent_name, interval in schedule_map.items():

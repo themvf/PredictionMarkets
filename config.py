@@ -40,10 +40,14 @@ class KalshiConfig:
 class PolymarketConfig:
     gamma_url: str = "https://gamma-api.polymarket.com"
     clob_url: str = "https://clob.polymarket.com"
+    data_api_url: str = "https://data-api.polymarket.com"
+    whale_threshold_usd: float = 5000.0
 
     @classmethod
     def from_env(cls) -> PolymarketConfig:
-        return cls()
+        return cls(
+            whale_threshold_usd=float(os.getenv("WHALE_THRESHOLD_USD", "5000")),
+        )
 
 
 @dataclass
@@ -65,6 +69,8 @@ class SchedulerConfig:
     analyzer_interval_minutes: int = 15
     alert_interval_minutes: int = 5
     insight_interval_minutes: int = 60
+    trader_interval_minutes: int = 30
+    whale_interval_minutes: int = 5
 
 
 @dataclass
