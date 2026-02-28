@@ -69,12 +69,21 @@ class WhaleAgent(BaseAgent):
                     else:
                         trader_id = trader["id"]
 
-                    usdc_size = raw.get("size", 0)
+                    # Prefer API-provided USD size, fall back to tokens * price
                     price = raw.get("price", 0)
-                    if price and usdc_size:
-                        usdc_value = float(usdc_size) * float(price)
+                    raw_usdc = raw.get("usdcSize") or raw.get("cashSize")
+                    if raw_usdc is not None:
+                        usdc_value = float(raw_usdc)
                     else:
-                        usdc_value = float(usdc_size) if usdc_size else 0
+                        token_size = raw.get("size", 0)
+                        if price and token_size:
+                            usdc_value = float(token_size) * float(price)
+                        else:
+                            usdc_value = float(token_size) if token_size else 0
+
+                    # Coerce timestamp to int
+                    raw_ts = raw.get("timestamp")
+                    trade_ts = int(float(raw_ts)) if raw_ts is not None else None
 
                     trade = WhaleTrade(
                         trader_id=trader_id,
@@ -88,7 +97,7 @@ class WhaleAgent(BaseAgent):
                         outcome=raw.get("outcome", ""),
                         outcome_index=raw.get("outcomeIndex"),
                         transaction_hash=tx_hash,
-                        trade_timestamp=raw.get("timestamp"),
+                        trade_timestamp=trade_ts,
                         event_slug=raw.get("eventSlug", ""),
                     )
 
@@ -103,9 +112,15 @@ class WhaleAgent(BaseAgent):
                                 or raw.get("name")
                                 or wallet[:10] + "..."
                             )
+                            if usdc_value >= threshold * 10:
+                                severity = "critical"
+                            elif usdc_value >= threshold * 3:
+                                severity = "warning"
+                            else:
+                                severity = "info"
                             alert = Alert(
                                 alert_type="whale_trade",
-                                severity="warning" if usdc_value >= threshold * 5 else "info",
+                                severity=severity,
                                 title=f"Whale {raw.get('side', 'TRADE')} ${usdc_value:,.0f}",
                                 message=(
                                     f"{user_display} {raw.get('side', 'traded')} "

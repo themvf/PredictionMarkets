@@ -5,7 +5,7 @@ import pandas as pd
 import plotly.graph_objects as go
 from pathlib import Path
 import sys
-from datetime import datetime
+from datetime import datetime, timezone
 
 PROJECT_DIR = Path(__file__).resolve().parent.parent
 if str(PROJECT_DIR) not in sys.path:
@@ -29,7 +29,7 @@ with col1:
 with col2:
     side_filter = st.selectbox("Side", ["All", "BUY", "SELL"])
 with col3:
-    limit = st.number_input("Show Last", 25, 500, 100)
+    limit = int(st.number_input("Show Last", 25, 500, 100))
 
 # Live fetch
 if st.button("Fetch Live Whale Trades", type="primary"):
@@ -101,8 +101,8 @@ for trade in trades:
             ts = trade.get("trade_timestamp")
             if ts:
                 try:
-                    dt = datetime.fromtimestamp(int(ts))
-                    st.caption(dt.strftime("%Y-%m-%d %H:%M"))
+                    dt = datetime.fromtimestamp(int(ts), tz=timezone.utc)
+                    st.caption(dt.strftime("%Y-%m-%d %H:%M UTC"))
                 except (ValueError, TypeError):
                     pass
 

@@ -117,7 +117,7 @@ if search:
     results = queries.search_traders(search)
     if results:
         for t in results:
-            name = t.get("user_name") or t["proxy_wallet"][:12]
+            name = t.get("user_name") or t["proxy_wallet"][:12] + "..."
             pnl = t.get("total_pnl", 0) or 0
             st.markdown(f"**{name}** -- P&L: ${pnl:,.2f}")
     else:

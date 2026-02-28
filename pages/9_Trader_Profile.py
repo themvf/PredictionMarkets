@@ -65,13 +65,12 @@ if not trader:
                         )
                         queries.insert_trader_position(pos)
 
-                    # Also fetch portfolio value
+                    # Also fetch portfolio value (targeted update, not full upsert)
                     try:
                         val_data = client.get_portfolio_value(wallet)
                         portfolio_val = val_data.get("value") if isinstance(val_data, dict) else None
                         if portfolio_val is not None:
-                            updated = Trader(proxy_wallet=wallet, portfolio_value=float(portfolio_val))
-                            queries.upsert_trader(updated)
+                            queries.update_portfolio_value(wallet, float(portfolio_val))
                     except Exception:
                         pass
 

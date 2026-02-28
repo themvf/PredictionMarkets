@@ -337,7 +337,12 @@ class MarketQueries:
     # ── Traders ───────────────────────────────────────────────
 
     def upsert_trader(self, trader: Trader) -> int:
-        """Insert or update a trader, returning their ID."""
+        """Insert or update a trader, returning their ID.
+
+        Uses COALESCE to preserve existing non-null data when the incoming
+        Trader object has NULL/empty fields (e.g. from whale agent creating
+        a minimal profile).
+        """
         with self.db._connect() as conn:
             conn.execute("""
                 INSERT INTO traders (proxy_wallet, user_name, profile_image,
@@ -345,14 +350,18 @@ class MarketQueries:
                     portfolio_value, last_updated)
                 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
                 ON CONFLICT(proxy_wallet) DO UPDATE SET
-                    user_name=excluded.user_name,
-                    profile_image=excluded.profile_image,
-                    x_username=excluded.x_username,
-                    verified_badge=excluded.verified_badge,
-                    total_pnl=excluded.total_pnl,
-                    total_volume=excluded.total_volume,
-                    portfolio_value=excluded.portfolio_value,
-                    last_updated=excluded.last_updated
+                    user_name = CASE WHEN excluded.user_name != ''
+                                THEN excluded.user_name ELSE traders.user_name END,
+                    profile_image = CASE WHEN excluded.profile_image != ''
+                                THEN excluded.profile_image ELSE traders.profile_image END,
+                    x_username = CASE WHEN excluded.x_username != ''
+                                THEN excluded.x_username ELSE traders.x_username END,
+                    verified_badge = CASE WHEN excluded.verified_badge != 0
+                                THEN excluded.verified_badge ELSE traders.verified_badge END,
+                    total_pnl = COALESCE(excluded.total_pnl, traders.total_pnl),
+                    total_volume = COALESCE(excluded.total_volume, traders.total_volume),
+                    portfolio_value = COALESCE(excluded.portfolio_value, traders.portfolio_value),
+                    last_updated = excluded.last_updated
             """, (
                 trader.proxy_wallet, trader.user_name, trader.profile_image,
                 trader.x_username, 1 if trader.verified_badge else 0,
@@ -383,7 +392,8 @@ class MarketQueries:
     def get_top_traders(self, order_by: str = "total_pnl",
                         limit: int = 50) -> List[Dict[str, Any]]:
         """Get top traders sorted by PNL or volume."""
-        col = "total_pnl" if order_by == "total_pnl" else "total_volume"
+        _VALID_SORT = {"total_pnl", "total_volume"}
+        col = order_by if order_by in _VALID_SORT else "total_pnl"
         with self.db._connect() as conn:
             rows = conn.execute(f"""
                 SELECT * FROM traders
@@ -399,6 +409,15 @@ class MarketQueries:
                 (f"%{query}%",),
             ).fetchall()
             return [dict(r) for r in rows]
+
+    def update_portfolio_value(self, wallet: str, value: float) -> None:
+        """Update only the portfolio value for a trader."""
+        with self.db._connect() as conn:
+            conn.execute(
+                "UPDATE traders SET portfolio_value=?, last_updated=? WHERE proxy_wallet=?",
+                (value, _now(), wallet),
+            )
+            conn.commit()
 
     # ── Whale Trades ──────────────────────────────────────────
 

@@ -207,6 +207,22 @@ class PolymarketClient:
 
     # ── Data API (Leaderboard, Trades, Positions) ─────────
 
+    @staticmethod
+    def _unwrap_list(data: Any) -> List[Dict[str, Any]]:
+        """Normalize API responses that may be wrapped in an envelope.
+
+        The Data API may return a bare list or a dict like
+        {"data": [...]} or {"results": [...]}.
+        """
+        if isinstance(data, list):
+            return data
+        if isinstance(data, dict):
+            for key in ("data", "results", "leaders", "trades", "positions"):
+                if isinstance(data.get(key), list):
+                    return data[key]
+            return []
+        return []
+
     def get_leaderboard(self, category: str = "OVERALL",
                         time_period: str = "ALL",
                         order_by: str = "PNL",
@@ -232,7 +248,7 @@ class PolymarketClient:
             timeout=30,
         )
         resp.raise_for_status()
-        return resp.json()
+        return self._unwrap_list(resp.json())
 
     def get_trades(self, user: Optional[str] = None,
                    market: Optional[str] = None,
@@ -265,7 +281,7 @@ class PolymarketClient:
             timeout=30,
         )
         resp.raise_for_status()
-        return resp.json()
+        return self._unwrap_list(resp.json())
 
     def get_positions(self, user: str,
                       market: Optional[str] = None,
@@ -293,7 +309,7 @@ class PolymarketClient:
             timeout=30,
         )
         resp.raise_for_status()
-        return resp.json()
+        return self._unwrap_list(resp.json())
 
     def get_portfolio_value(self, user: str) -> Dict[str, Any]:
         """Fetch total portfolio value for a user."""
