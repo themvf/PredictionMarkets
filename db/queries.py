@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from typing import Any, Dict, List, Optional, Tuple
 
 from .database import DatabaseManager
@@ -58,7 +58,6 @@ class MarketQueries:
                 "SELECT id FROM markets WHERE platform=? AND platform_id=?",
                 (market.platform, market.platform_id),
             ).fetchone()
-            conn.commit()
             return row["id"]
 
     def get_distinct_categories(self, status: str = "active") -> List[str]:
@@ -121,7 +120,7 @@ class MarketQueries:
     def search_markets(self, query: str) -> List[Dict[str, Any]]:
         with self.db._connect() as conn:
             rows = conn.execute(
-                "SELECT * FROM markets WHERE title LIKE ? AND status='active' ORDER BY volume DESC",
+                f"SELECT * FROM markets WHERE title {self.db._like} ? AND status='active' ORDER BY volume DESC",
                 (f"%{query}%",),
             ).fetchall()
             return [dict(r) for r in rows]
@@ -141,18 +140,18 @@ class MarketQueries:
                     WHERE id=?
                 """, (pair.match_confidence, pair.match_reason,
                       pair.price_gap, _now(), existing["id"]))
-                conn.commit()
                 return existing["id"]
             else:
-                cursor = conn.execute("""
+                sql = """
                     INSERT INTO market_pairs (kalshi_market_id, polymarket_market_id,
                         match_confidence, match_reason, price_gap, last_checked)
                     VALUES (?, ?, ?, ?, ?, ?)
-                """, (pair.kalshi_market_id, pair.polymarket_market_id,
-                      pair.match_confidence, pair.match_reason,
-                      pair.price_gap, _now()))
-                conn.commit()
-                return cursor.lastrowid
+                """
+                cursor = conn.execute(self.db._returning_id(sql),
+                    (pair.kalshi_market_id, pair.polymarket_market_id,
+                     pair.match_confidence, pair.match_reason,
+                     pair.price_gap, _now()))
+                return self.db._last_id(cursor)
 
     def get_all_pairs(self) -> List[Dict[str, Any]]:
         with self.db._connect() as conn:
@@ -179,17 +178,17 @@ class MarketQueries:
 
     def insert_snapshot(self, snapshot: PriceSnapshot) -> int:
         with self.db._connect() as conn:
-            cursor = conn.execute("""
+            sql = """
                 INSERT INTO price_snapshots (market_id, yes_price, no_price,
                     volume, open_interest, best_bid, best_ask, spread, timestamp)
                 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-            """, (
+            """
+            cursor = conn.execute(self.db._returning_id(sql), (
                 snapshot.market_id, snapshot.yes_price, snapshot.no_price,
                 snapshot.volume, snapshot.open_interest, snapshot.best_bid,
                 snapshot.best_ask, snapshot.spread, _now(),
             ))
-            conn.commit()
-            return cursor.lastrowid
+            return self.db._last_id(cursor)
 
     def get_price_history(self, market_id: int,
                           limit: int = 500) -> List[Dict[str, Any]]:
@@ -215,17 +214,17 @@ class MarketQueries:
 
     def insert_analysis(self, result: AnalysisResult) -> int:
         with self.db._connect() as conn:
-            cursor = conn.execute("""
+            sql = """
                 INSERT INTO analysis_results (pair_id, kalshi_yes, poly_yes,
                     price_gap, gap_direction, llm_analysis, risk_score)
                 VALUES (?, ?, ?, ?, ?, ?, ?)
-            """, (
+            """
+            cursor = conn.execute(self.db._returning_id(sql), (
                 result.pair_id, result.kalshi_yes, result.poly_yes,
                 result.price_gap, result.gap_direction,
                 result.llm_analysis, result.risk_score,
             ))
-            conn.commit()
-            return cursor.lastrowid
+            return self.db._last_id(cursor)
 
     def get_latest_analyses(self, limit: int = 50) -> List[Dict[str, Any]]:
         with self.db._connect() as conn:
@@ -244,17 +243,17 @@ class MarketQueries:
 
     def insert_alert(self, alert: Alert) -> int:
         with self.db._connect() as conn:
-            cursor = conn.execute("""
+            sql = """
                 INSERT INTO alerts (alert_type, severity, market_id, pair_id,
                     title, message, data, acknowledged)
                 VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-            """, (
+            """
+            cursor = conn.execute(self.db._returning_id(sql), (
                 alert.alert_type, alert.severity, alert.market_id,
                 alert.pair_id, alert.title, alert.message,
                 alert.data, 0,
             ))
-            conn.commit()
-            return cursor.lastrowid
+            return self.db._last_id(cursor)
 
     def get_alerts(self, alert_type: Optional[str] = None,
                    acknowledged: Optional[bool] = None,
@@ -276,23 +275,22 @@ class MarketQueries:
     def acknowledge_alert(self, alert_id: int) -> None:
         with self.db._connect() as conn:
             conn.execute("UPDATE alerts SET acknowledged=1 WHERE id=?", (alert_id,))
-            conn.commit()
 
     # ── Insights ─────────────────────────────────────────────
 
     def insert_insight(self, insight: Insight) -> int:
         with self.db._connect() as conn:
-            cursor = conn.execute("""
+            sql = """
                 INSERT INTO insights (report_type, title, content,
                     markets_covered, model_used, tokens_used)
                 VALUES (?, ?, ?, ?, ?, ?)
-            """, (
+            """
+            cursor = conn.execute(self.db._returning_id(sql), (
                 insight.report_type, insight.title, insight.content,
                 insight.markets_covered, insight.model_used,
                 insight.tokens_used,
             ))
-            conn.commit()
-            return cursor.lastrowid
+            return self.db._last_id(cursor)
 
     def get_insights(self, report_type: Optional[str] = None,
                      limit: int = 20) -> List[Dict[str, Any]]:
@@ -313,17 +311,17 @@ class MarketQueries:
 
     def insert_agent_log(self, log: AgentLog) -> int:
         with self.db._connect() as conn:
-            cursor = conn.execute("""
+            sql = """
                 INSERT INTO agent_logs (agent_name, status, started_at,
                     completed_at, duration_seconds, items_processed, summary, error)
                 VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-            """, (
+            """
+            cursor = conn.execute(self.db._returning_id(sql), (
                 log.agent_name, log.status, log.started_at,
                 log.completed_at, log.duration_seconds,
                 log.items_processed, log.summary, log.error,
             ))
-            conn.commit()
-            return cursor.lastrowid
+            return self.db._last_id(cursor)
 
     def get_agent_logs(self, agent_name: Optional[str] = None,
                        limit: int = 50) -> List[Dict[str, Any]]:
@@ -402,7 +400,6 @@ class MarketQueries:
                 "SELECT id FROM traders WHERE proxy_wallet=?",
                 (trader.proxy_wallet,),
             ).fetchone()
-            conn.commit()
             return row["id"]
 
     def get_trader_by_wallet(self, wallet: str) -> Optional[Dict[str, Any]]:
@@ -435,7 +432,7 @@ class MarketQueries:
     def search_traders(self, query: str) -> List[Dict[str, Any]]:
         with self.db._connect() as conn:
             rows = conn.execute(
-                "SELECT * FROM traders WHERE user_name LIKE ? ORDER BY total_pnl DESC",
+                f"SELECT * FROM traders WHERE user_name {self.db._like} ? ORDER BY total_pnl DESC",
                 (f"%{query}%",),
             ).fetchall()
             return [dict(r) for r in rows]
@@ -447,7 +444,6 @@ class MarketQueries:
                 "UPDATE traders SET portfolio_value=?, last_updated=? WHERE proxy_wallet=?",
                 (value, _now(), wallet),
             )
-            conn.commit()
 
     # ── Whale Trades ──────────────────────────────────────────
 
@@ -455,20 +451,35 @@ class MarketQueries:
         """Insert a whale trade (skip if duplicate tx hash)."""
         with self.db._connect() as conn:
             try:
-                cursor = conn.execute("""
-                    INSERT OR IGNORE INTO whale_trades (
-                        trader_id, proxy_wallet, condition_id, market_title,
-                        side, size, price, usdc_size, outcome, outcome_index,
-                        transaction_hash, trade_timestamp, event_slug)
-                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-                """, (
+                params = (
                     trade.trader_id, trade.proxy_wallet, trade.condition_id,
                     trade.market_title, trade.side, trade.size, trade.price,
                     trade.usdc_size, trade.outcome, trade.outcome_index,
                     trade.transaction_hash, trade.trade_timestamp,
-                    trade.event_slug,
-                ))
-                conn.commit()
+                    trade.event_slug, _now(),
+                )
+                if self.db._backend == "postgres":
+                    sql = """
+                        INSERT INTO whale_trades (
+                            trader_id, proxy_wallet, condition_id, market_title,
+                            side, size, price, usdc_size, outcome, outcome_index,
+                            transaction_hash, trade_timestamp, event_slug, created_at)
+                        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                        ON CONFLICT (transaction_hash) DO NOTHING
+                        RETURNING id
+                    """
+                else:
+                    sql = """
+                        INSERT OR IGNORE INTO whale_trades (
+                            trader_id, proxy_wallet, condition_id, market_title,
+                            side, size, price, usdc_size, outcome, outcome_index,
+                            transaction_hash, trade_timestamp, event_slug, created_at)
+                        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    """
+                cursor = conn.execute(sql, params)
+                if self.db._backend == "postgres":
+                    row = cursor.fetchone()
+                    return row["id"] if row else 0
                 return cursor.lastrowid or 0
             except Exception:
                 return 0
@@ -504,33 +515,34 @@ class MarketQueries:
 
     def get_whale_trade_count_since(self, hours: int = 24) -> int:
         """Count whale trades in the last N hours."""
+        cutoff = (datetime.now(timezone.utc) - timedelta(hours=hours)).isoformat()
         with self.db._connect() as conn:
-            row = conn.execute("""
-                SELECT COUNT(*) as cnt FROM whale_trades
-                WHERE created_at >= datetime('now', ?)
-            """, (f"-{hours} hours",)).fetchone()
+            row = conn.execute(
+                "SELECT COUNT(*) as cnt FROM whale_trades WHERE created_at >= ?",
+                (cutoff,),
+            ).fetchone()
             return row["cnt"] if row else 0
 
     # ── Trader Positions ──────────────────────────────────────
 
     def insert_trader_position(self, pos: TraderPosition) -> int:
         with self.db._connect() as conn:
-            cursor = conn.execute("""
+            sql = """
                 INSERT INTO trader_positions (
                     trader_id, proxy_wallet, condition_id, market_title,
                     outcome, size, avg_price, initial_value, current_value,
                     cash_pnl, percent_pnl, realized_pnl, cur_price,
                     redeemable, event_slug)
                 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-            """, (
+            """
+            cursor = conn.execute(self.db._returning_id(sql), (
                 pos.trader_id, pos.proxy_wallet, pos.condition_id,
                 pos.market_title, pos.outcome, pos.size, pos.avg_price,
                 pos.initial_value, pos.current_value, pos.cash_pnl,
                 pos.percent_pnl, pos.realized_pnl, pos.cur_price,
                 1 if pos.redeemable else 0, pos.event_slug,
             ))
-            conn.commit()
-            return cursor.lastrowid
+            return self.db._last_id(cursor)
 
     def get_trader_positions(self, trader_id: int,
                              limit: int = 100) -> List[Dict[str, Any]]:

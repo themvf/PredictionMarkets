@@ -102,6 +102,7 @@ class AppConfig:
     scheduler: SchedulerConfig = field(default_factory=SchedulerConfig)
     alerts: AlertRules = field(default_factory=AlertRules)
     db_path: Path = DB_PATH
+    database_url: Optional[str] = None
 
     @classmethod
     def from_env(cls) -> AppConfig:
@@ -110,6 +111,7 @@ class AppConfig:
             polymarket=PolymarketConfig.from_env(),
             openai=OpenAIConfig.from_env(),
             slack=SlackConfig.from_env(),
+            database_url=os.getenv("DATABASE_URL"),
         )
 
 

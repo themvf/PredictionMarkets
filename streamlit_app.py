@@ -27,7 +27,7 @@ st.set_page_config(
 
 @st.cache_resource
 def init_database(config: AppConfig) -> DatabaseManager:
-    return DatabaseManager(config.db_path)
+    return DatabaseManager(db_path=config.db_path, database_url=config.database_url)
 
 
 @st.cache_resource

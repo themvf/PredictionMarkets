@@ -1,4 +1,8 @@
-"""Tests for database schema creation and CRUD operations."""
+"""Tests for database schema creation and CRUD operations.
+
+Supports both SQLite (default) and PostgreSQL backends.
+Set DATABASE_URL env var to run tests against Neon PostgreSQL.
+"""
 
 import os
 import tempfile
@@ -21,14 +25,28 @@ def db_path(tmp_path):
 
 @pytest.fixture
 def db(db_path):
-    mgr = DatabaseManager(db_path)
-    yield mgr
-    # Close WAL connections to avoid Windows PermissionError on cleanup
-    try:
+    database_url = os.getenv("DATABASE_URL")
+    if database_url:
+        mgr = DatabaseManager(database_url=database_url)
+        yield mgr
+        # Clean up test data from shared PostgreSQL database
         with mgr._connect() as conn:
-            conn.execute("PRAGMA wal_checkpoint(TRUNCATE)")
-    except Exception:
-        pass
+            for table in [
+                "trader_positions", "whale_trades", "traders",
+                "agent_logs", "insights", "alerts",
+                "analysis_results", "price_snapshots",
+                "market_pairs", "markets",
+            ]:
+                conn.execute(f"TRUNCATE {table} CASCADE")
+    else:
+        mgr = DatabaseManager(db_path=db_path)
+        yield mgr
+        # Close WAL connections to avoid Windows PermissionError on cleanup
+        try:
+            with mgr._connect() as conn:
+                conn.execute("PRAGMA wal_checkpoint(TRUNCATE)")
+        except Exception:
+            pass
 
 
 @pytest.fixture
@@ -39,23 +57,39 @@ def queries(db):
 class TestDatabaseSchema:
     def test_schema_creates_all_tables(self, db):
         with db._connect() as conn:
-            tables = conn.execute(
-                "SELECT name FROM sqlite_master WHERE type='table' ORDER BY name"
-            ).fetchall()
-            table_names = {t["name"] for t in tables}
+            if db._backend == "postgres":
+                rows = conn.execute(
+                    "SELECT table_name FROM information_schema.tables "
+                    "WHERE table_schema = 'public' ORDER BY table_name"
+                ).fetchall()
+                table_names = {t["table_name"] for t in rows}
+            else:
+                tables = conn.execute(
+                    "SELECT name FROM sqlite_master WHERE type='table' ORDER BY name"
+                ).fetchall()
+                table_names = {t["name"] for t in tables}
 
         expected = {
             "markets", "market_pairs", "price_snapshots",
             "analysis_results", "alerts", "insights", "agent_logs",
+            "traders", "whale_trades", "trader_positions",
         }
         assert expected.issubset(table_names)
 
     def test_schema_creates_indexes(self, db):
         with db._connect() as conn:
-            indexes = conn.execute(
-                "SELECT name FROM sqlite_master WHERE type='index' AND name LIKE 'idx_%'"
-            ).fetchall()
-            index_names = {i["name"] for i in indexes}
+            if db._backend == "postgres":
+                indexes = conn.execute(
+                    "SELECT indexname FROM pg_indexes "
+                    "WHERE schemaname = 'public' AND indexname LIKE ?",
+                    ("idx_%",),
+                ).fetchall()
+                index_names = {i["indexname"] for i in indexes}
+            else:
+                indexes = conn.execute(
+                    "SELECT name FROM sqlite_master WHERE type='index' AND name LIKE 'idx_%'"
+                ).fetchall()
+                index_names = {i["name"] for i in indexes}
 
         assert "idx_price_snapshots_market_time" in index_names
         assert "idx_markets_platform_status" in index_names
