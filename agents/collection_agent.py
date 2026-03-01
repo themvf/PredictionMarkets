@@ -40,13 +40,11 @@ class CollectionAgent(BaseAgent):
             results = self._collect_batch(
                 kalshi_markets, self._collect_kalshi, kalshi_client, "Kalshi",
             )
-            for snapshot, error in results:
-                if error:
-                    errors.append(error)
-                elif snapshot:
-                    queries.insert_snapshot(snapshot)
-                    queries.upsert_market(snapshot._market_update)
-                    snapshots_created += 1
+            snapshots, market_updates = self._split_results(results, errors)
+            if snapshots:
+                queries.insert_snapshots_batch(snapshots)
+                queries.upsert_markets_batch(market_updates)
+                snapshots_created += len(snapshots)
 
         # ── Collect Polymarket prices (concurrent) ─────────────
         poly_markets = queries.get_markets_by_platform("polymarket")
@@ -54,13 +52,11 @@ class CollectionAgent(BaseAgent):
             results = self._collect_batch(
                 poly_markets, self._collect_polymarket, polymarket_client, "Polymarket",
             )
-            for snapshot, error in results:
-                if error:
-                    errors.append(error)
-                elif snapshot:
-                    queries.insert_snapshot(snapshot)
-                    queries.upsert_market(snapshot._market_update)
-                    snapshots_created += 1
+            snapshots, market_updates = self._split_results(results, errors)
+            if snapshots:
+                queries.insert_snapshots_batch(snapshots)
+                queries.upsert_markets_batch(market_updates)
+                snapshots_created += len(snapshots)
 
         error_summary = f" ({len(errors)} errors)" if errors else ""
         return AgentResult(
@@ -98,6 +94,22 @@ class CollectionAgent(BaseAgent):
                     results.append((None, f"{platform_label} {market['platform_id']}: {e}"))
 
         return results
+
+    @staticmethod
+    def _split_results(
+        results: List[Tuple[PriceSnapshot | None, str | None]],
+        errors: List[str],
+    ) -> Tuple[List[PriceSnapshot], List[NormalizedMarket]]:
+        """Separate successful snapshots/updates from errors."""
+        snapshots = []
+        market_updates = []
+        for snapshot, error in results:
+            if error:
+                errors.append(error)
+            elif snapshot:
+                snapshots.append(snapshot)
+                market_updates.append(snapshot._market_update)
+        return snapshots, market_updates
 
     def _collect_kalshi(self, market: Dict[str, Any],
                         client: Any) -> PriceSnapshot | None:

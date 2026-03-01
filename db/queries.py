@@ -230,6 +230,24 @@ class MarketQueries:
             ))
             return self.db._last_id(cursor)
 
+    def insert_snapshots_batch(self, snapshots: List[PriceSnapshot]) -> int:
+        """Batch insert price snapshots in a single connection."""
+        if not snapshots:
+            return 0
+        with self.db._connect() as conn:
+            now = _now()
+            for s in snapshots:
+                conn.execute("""
+                    INSERT INTO price_snapshots (market_id, yes_price, no_price,
+                        volume, open_interest, best_bid, best_ask, spread, timestamp)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """, (
+                    s.market_id, s.yes_price, s.no_price,
+                    s.volume, s.open_interest, s.best_bid,
+                    s.best_ask, s.spread, now,
+                ))
+            return len(snapshots)
+
     def get_price_history(self, market_id: int,
                           limit: int = 500) -> List[Dict[str, Any]]:
         with self.db._connect() as conn:
@@ -311,6 +329,23 @@ class MarketQueries:
             params.append(limit)
             rows = conn.execute(query, params).fetchall()
             return [dict(r) for r in rows]
+
+    def insert_alerts_batch(self, alerts: List[Alert]) -> int:
+        """Batch insert alerts in a single connection."""
+        if not alerts:
+            return 0
+        with self.db._connect() as conn:
+            for alert in alerts:
+                conn.execute("""
+                    INSERT INTO alerts (alert_type, severity, market_id, pair_id,
+                        title, message, data, acknowledged)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                """, (
+                    alert.alert_type, alert.severity, alert.market_id,
+                    alert.pair_id, alert.title, alert.message,
+                    alert.data, 0,
+                ))
+            return len(alerts)
 
     def acknowledge_alert(self, alert_id: int) -> None:
         with self.db._connect() as conn:
@@ -442,6 +477,53 @@ class MarketQueries:
             ).fetchone()
             return row["id"]
 
+    def upsert_traders_batch(self, traders: List[Trader]) -> int:
+        """Batch upsert traders in a single connection. Returns count upserted."""
+        if not traders:
+            return 0
+        with self.db._connect() as conn:
+            now = _now()
+            for trader in traders:
+                conn.execute("""
+                    INSERT INTO traders (proxy_wallet, user_name, profile_image,
+                        x_username, verified_badge, total_pnl, total_volume,
+                        portfolio_value, last_updated)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    ON CONFLICT(proxy_wallet) DO UPDATE SET
+                        user_name = CASE WHEN excluded.user_name != ''
+                                    THEN excluded.user_name ELSE traders.user_name END,
+                        profile_image = CASE WHEN excluded.profile_image != ''
+                                    THEN excluded.profile_image ELSE traders.profile_image END,
+                        x_username = CASE WHEN excluded.x_username != ''
+                                    THEN excluded.x_username ELSE traders.x_username END,
+                        verified_badge = CASE WHEN excluded.verified_badge != 0
+                                    THEN excluded.verified_badge ELSE traders.verified_badge END,
+                        total_pnl = COALESCE(excluded.total_pnl, traders.total_pnl),
+                        total_volume = COALESCE(excluded.total_volume, traders.total_volume),
+                        portfolio_value = COALESCE(excluded.portfolio_value, traders.portfolio_value),
+                        last_updated = excluded.last_updated
+                """, (
+                    trader.proxy_wallet, trader.user_name, trader.profile_image,
+                    trader.x_username, 1 if trader.verified_badge else 0,
+                    trader.total_pnl, trader.total_volume,
+                    trader.portfolio_value, now,
+                ))
+            return len(traders)
+
+    def get_traders_by_wallets(self, wallets: List[str]) -> Dict[str, Dict[str, Any]]:
+        """Batch lookup traders by wallet addresses. Returns {wallet: trader_dict}."""
+        if not wallets:
+            return {}
+        with self.db._connect() as conn:
+            result = {}
+            for wallet in wallets:
+                row = conn.execute(
+                    "SELECT * FROM traders WHERE proxy_wallet=?", (wallet,),
+                ).fetchone()
+                if row:
+                    result[wallet] = dict(row)
+            return result
+
     def get_trader_by_wallet(self, wallet: str) -> Optional[Dict[str, Any]]:
         with self.db._connect() as conn:
             row = conn.execute(
@@ -523,6 +605,51 @@ class MarketQueries:
                 return cursor.lastrowid or 0
             except Exception:
                 return 0
+
+    def insert_whale_trades_batch(self, trades: List[WhaleTrade]) -> int:
+        """Batch insert whale trades in a single connection. Skips duplicates."""
+        if not trades:
+            return 0
+        inserted = 0
+        with self.db._connect() as conn:
+            now = _now()
+            for trade in trades:
+                try:
+                    params = (
+                        trade.trader_id, trade.proxy_wallet, trade.condition_id,
+                        trade.market_title, trade.side, trade.size, trade.price,
+                        trade.usdc_size, trade.outcome, trade.outcome_index,
+                        trade.transaction_hash, trade.trade_timestamp,
+                        trade.event_slug, now,
+                    )
+                    if self.db._backend == "postgres":
+                        sql = """
+                            INSERT INTO whale_trades (
+                                trader_id, proxy_wallet, condition_id, market_title,
+                                side, size, price, usdc_size, outcome, outcome_index,
+                                transaction_hash, trade_timestamp, event_slug, created_at)
+                            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                            ON CONFLICT (transaction_hash) DO NOTHING
+                            RETURNING id
+                        """
+                        cursor = conn.execute(sql, params)
+                        row = cursor.fetchone()
+                        if row:
+                            inserted += 1
+                    else:
+                        sql = """
+                            INSERT OR IGNORE INTO whale_trades (
+                                trader_id, proxy_wallet, condition_id, market_title,
+                                side, size, price, usdc_size, outcome, outcome_index,
+                                transaction_hash, trade_timestamp, event_slug, created_at)
+                            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                        """
+                        cursor = conn.execute(sql, params)
+                        if cursor.lastrowid:
+                            inserted += 1
+                except Exception:
+                    continue
+        return inserted
 
     def get_whale_trades(self, limit: int = 100,
                          min_size: float = 0,

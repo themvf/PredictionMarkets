@@ -66,16 +66,16 @@ class TraderAgent(BaseAgent):
                 except Exception as e:
                     errors.append(f"Leaderboard {cat}/{period}: {e}")
 
-        # Deduplicate and upsert
+        # Deduplicate and batch upsert
         seen_wallets: set = set()
-        traders_upserted = 0
+        traders_to_upsert: list = []
         for entry in all_entries:
             wallet = entry.get("proxyWallet", "")
             if not wallet or wallet in seen_wallets:
                 continue
             seen_wallets.add(wallet)
 
-            trader = Trader(
+            traders_to_upsert.append(Trader(
                 proxy_wallet=wallet,
                 user_name=entry.get("userName", ""),
                 profile_image=entry.get("profileImage", ""),
@@ -83,9 +83,9 @@ class TraderAgent(BaseAgent):
                 verified_badge=bool(entry.get("verifiedBadge", False)),
                 total_pnl=entry.get("pnl"),
                 total_volume=entry.get("vol"),
-            )
-            queries.upsert_trader(trader)
-            traders_upserted += 1
+            ))
+
+        traders_upserted = queries.upsert_traders_batch(traders_to_upsert)
 
         error_summary = f" ({len(errors)} errors)" if errors else ""
         return AgentResult(
