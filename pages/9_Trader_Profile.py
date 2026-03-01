@@ -4,6 +4,7 @@ import streamlit as st
 import pandas as pd
 import plotly.graph_objects as go
 from pathlib import Path
+from datetime import datetime, timezone
 import sys
 
 PROJECT_DIR = Path(__file__).resolve().parent.parent
@@ -189,18 +190,129 @@ if positions:
 else:
     st.info("No positions found. Click 'Refresh Positions' to fetch from Polymarket.")
 
-# Recent trades
+# ── Trade History ─────────────────────────────────────────
 st.divider()
-st.subheader("Recent Trades")
-trades = queries.get_whale_trades_by_trader(trader["id"], limit=50)
-if trades:
-    for trade in trades[:20]:
-        side_emoji = "🟢" if trade.get("side") == "BUY" else "🔴"
-        usdc = trade.get("usdc_size", 0) or 0
-        st.markdown(
-            f"{side_emoji} **{trade.get('side', 'TRADE')}** "
-            f"${usdc:,.0f} -- {trade.get('market_title', 'Unknown')} "
-            f"({trade.get('outcome', '')})"
+st.subheader("Trade History")
+
+history_key = f"trade_history_{wallet}"
+
+if st.button("Load Trade History", type="primary"):
+    with st.spinner("Fetching last 100 trades from Polymarket..."):
+        try:
+            context = get_context()
+            client = context.get("polymarket_client")
+            if not client:
+                st.error("Polymarket client not available.")
+            else:
+                # Fetch trades and current positions from the API
+                raw_trades = client.get_trades(user=wallet, limit=100)
+                raw_positions = client.get_positions(user=wallet, limit=200)
+
+                # Build position lookup: conditionId → {pnl, redeemable, size}
+                pos_map: dict = {}
+                for p in raw_positions:
+                    cid = p.get("conditionId", "")
+                    if cid:
+                        pos_map[cid] = {
+                            "cash_pnl": float(p.get("cashPnl") or 0),
+                            "redeemable": bool(p.get("redeemable")),
+                            "size": float(p.get("size") or 0),
+                        }
+
+                # Build category lookup from our markets DB
+                all_markets = queries.get_all_markets(platform="polymarket")
+                cat_map = {
+                    m["platform_id"]: m.get("category", "")
+                    for m in all_markets
+                }
+
+                # Build table rows
+                history_rows = []
+                for t in raw_trades:
+                    cid = t.get("conditionId", "")
+                    pos = pos_map.get(cid, {})
+
+                    # Determine status
+                    if pos.get("redeemable"):
+                        status = "Resolved"
+                    elif pos.get("size", 0) > 0:
+                        status = "Open"
+                    else:
+                        status = "Closed"
+
+                    # Parse timestamp
+                    ts = t.get("timestamp")
+                    date_str = ""
+                    if ts:
+                        try:
+                            dt = datetime.fromtimestamp(
+                                int(float(ts)), tz=timezone.utc,
+                            )
+                            date_str = dt.strftime("%Y-%m-%d %H:%M")
+                        except (ValueError, TypeError):
+                            date_str = str(ts)
+
+                    # Calculate USDC value
+                    raw_usdc = t.get("usdcSize") or t.get("cashSize")
+                    if raw_usdc is not None:
+                        usdc = float(raw_usdc)
+                    else:
+                        price = float(t.get("price") or 0)
+                        size = float(t.get("size") or 0)
+                        usdc = price * size if price and size else 0
+
+                    history_rows.append({
+                        "Date": date_str,
+                        "Status": status,
+                        "Category": cat_map.get(cid, ""),
+                        "Event": t.get("title", "Unknown"),
+                        "Side": t.get("side", ""),
+                        "Size ($)": usdc,
+                        "Position P&L": pos.get("cash_pnl"),
+                    })
+
+                st.session_state[history_key] = history_rows
+                st.rerun()
+        except Exception as e:
+            st.error(f"Failed to load trade history: {e}")
+
+# Display cached trade history
+if history_key in st.session_state:
+    rows = st.session_state[history_key]
+    if rows:
+        df = pd.DataFrame(rows)
+
+        # Format currency columns for display
+        df["Size ($)"] = df["Size ($)"].apply(
+            lambda x: f"${x:,.0f}" if x else "—"
         )
+        df["Position P&L"] = df["Position P&L"].apply(
+            lambda x: f"${x:,.2f}" if x is not None else "—"
+        )
+
+        st.dataframe(df, use_container_width=True, hide_index=True)
+        st.caption(f"Showing {len(rows)} most recent trades. "
+                   "P&L is per position (not per individual trade).")
+    else:
+        st.info("No trades found for this trader on Polymarket.")
 else:
-    st.info("No trade history in local database for this trader.")
+    # Fallback: show whale trades from local DB
+    trades = queries.get_whale_trades_by_trader(trader["id"], limit=50)
+    if trades:
+        st.caption(
+            "Showing large trades from database. "
+            "Click **Load Trade History** for the full last 100 trades."
+        )
+        for trade in trades[:20]:
+            side_emoji = "🟢" if trade.get("side") == "BUY" else "🔴"
+            usdc = trade.get("usdc_size", 0) or 0
+            st.markdown(
+                f"{side_emoji} **{trade.get('side', 'TRADE')}** "
+                f"${usdc:,.0f} -- {trade.get('market_title', 'Unknown')} "
+                f"({trade.get('outcome', '')})"
+            )
+    else:
+        st.info(
+            "No trade history available. "
+            "Click **Load Trade History** to fetch from Polymarket."
+        )
