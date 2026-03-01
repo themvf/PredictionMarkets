@@ -15,6 +15,7 @@ from typing import Any, Dict, List, Optional
 from .base import AgentResult, AgentStatus, BaseAgent
 from db.models import NormalizedMarket, MarketPair
 from llm.sanitize import sanitize_text, sanitize_market_fields
+from utils.categories import normalize_category, extract_subcategory
 
 
 class DiscoveryAgent(BaseAgent):
@@ -90,12 +91,18 @@ class DiscoveryAgent(BaseAgent):
         if no_price is not None:
             no_price = no_price / 100.0 if no_price > 1 else no_price
 
+        title = clean.get("title", clean.get("subtitle", ""))
+        raw_category = clean.get("category", clean.get("series_ticker", ""))
+        category = normalize_category(raw_category, title)
+        subcategory = extract_subcategory(category, title)
+
         return NormalizedMarket(
             platform="kalshi",
             platform_id=sanitize_text(raw.get("ticker", ""), max_length=50),
-            title=clean.get("title", clean.get("subtitle", "")),
+            title=title,
             description=clean.get("rules_primary", ""),
-            category=clean.get("category", clean.get("series_ticker", "")),
+            category=category,
+            subcategory=subcategory,
             status="active" if raw.get("status") == "open" else raw.get("status", ""),
             yes_price=yes_price,
             no_price=no_price,
@@ -156,12 +163,18 @@ class DiscoveryAgent(BaseAgent):
             raw.get("conditionId", raw.get("id", "")), max_length=100,
         )
 
+        title = clean.get("question", clean.get("title", ""))
+        raw_category = clean.get("category", clean.get("groupItemTitle", ""))
+        category = normalize_category(raw_category, title)
+        subcategory = extract_subcategory(category, title)
+
         return NormalizedMarket(
             platform="polymarket",
             platform_id=condition_id,
-            title=clean.get("question", clean.get("title", "")),
+            title=title,
             description=clean.get("description", ""),
-            category=clean.get("category", clean.get("groupItemTitle", "")),
+            category=category,
+            subcategory=subcategory,
             status="active" if raw.get("active") else "closed",
             yes_price=yes_price,
             no_price=no_price,

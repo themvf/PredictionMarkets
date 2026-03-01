@@ -20,7 +20,7 @@ queries = init_queries(db)
 st.title("Market Overview")
 
 # Filters
-col1, col2, col3, col_cat = st.columns(4)
+col1, col2, col3 = st.columns(3)
 with col1:
     platform_filter = st.selectbox(
         "Platform",
@@ -30,15 +30,22 @@ with col2:
     status_filter = st.selectbox("Status", ["active", "closed", "settled"])
 with col3:
     search_query = st.text_input("Search", placeholder="Filter by title...")
+
+# Category + Subcategory filters
+col_cat, col_sub, col_vol, col_liq = st.columns(4)
 with col_cat:
     categories = queries.get_distinct_categories(status=status_filter)
     category_filter = st.selectbox("Category", ["All"] + categories)
-
-# Additional filters
-col4, col5 = st.columns(2)
-with col4:
+with col_sub:
+    if category_filter != "All":
+        subcategories = queries.get_distinct_subcategories(category_filter, status=status_filter)
+        subcategory_filter = st.selectbox("Subcategory", ["All"] + subcategories)
+    else:
+        subcategory_filter = "All"
+        st.selectbox("Subcategory", ["All"], disabled=True)
+with col_vol:
     vol_min = st.number_input("Min Volume ($)", 0, 10000000, 0, 1000)
-with col5:
+with col_liq:
     liq_filter = st.selectbox("Liquidity Tier", ["All", "deep", "moderate", "thin", "micro"])
 
 # Fetch data
@@ -47,7 +54,9 @@ if search_query:
 else:
     platform = None if platform_filter == "All" else platform_filter
     cat = None if category_filter == "All" else category_filter
-    markets = queries.get_all_markets(platform=platform, status=status_filter, category=cat)
+    sub = None if subcategory_filter == "All" else subcategory_filter
+    markets = queries.get_all_markets(platform=platform, status=status_filter,
+                                      category=cat, subcategory=sub)
 
 # Apply volume filter
 if vol_min > 0:
@@ -67,7 +76,7 @@ if not markets:
 df = pd.DataFrame(markets)
 
 # Display columns
-display_cols = ["platform", "title", "yes_price", "no_price", "volume", "liquidity", "category", "close_time"]
+display_cols = ["platform", "title", "yes_price", "no_price", "volume", "liquidity", "category", "subcategory", "close_time"]
 available_cols = [c for c in display_cols if c in df.columns]
 df_display = df[available_cols].copy()
 
@@ -110,6 +119,7 @@ st.dataframe(
         "no_price": st.column_config.TextColumn("No Price"),
         "volume": st.column_config.TextColumn("Volume"),
         "category": st.column_config.TextColumn("Category"),
+        "subcategory": st.column_config.TextColumn("Subcategory"),
         "close_time": st.column_config.TextColumn("Closes"),
     },
 )

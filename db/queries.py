@@ -30,13 +30,14 @@ class MarketQueries:
         with self.db._connect() as conn:
             conn.execute("""
                 INSERT INTO markets (platform, platform_id, title, description,
-                    category, status, yes_price, no_price, volume, liquidity,
-                    close_time, url, last_updated, raw_data)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    category, subcategory, status, yes_price, no_price, volume,
+                    liquidity, close_time, url, last_updated, raw_data)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 ON CONFLICT(platform, platform_id) DO UPDATE SET
                     title=excluded.title,
                     description=excluded.description,
                     category=excluded.category,
+                    subcategory=excluded.subcategory,
                     status=excluded.status,
                     yes_price=excluded.yes_price,
                     no_price=excluded.no_price,
@@ -48,8 +49,8 @@ class MarketQueries:
                     raw_data=excluded.raw_data
             """, (
                 market.platform, market.platform_id, market.title,
-                market.description, market.category, market.status,
-                market.yes_price, market.no_price, market.volume,
+                market.description, market.category, market.subcategory,
+                market.status, market.yes_price, market.no_price, market.volume,
                 market.liquidity, market.close_time, market.url,
                 _now(), market.raw_data,
             ))
@@ -69,9 +70,22 @@ class MarketQueries:
             ).fetchall()
             return [r["category"] for r in rows]
 
+    def get_distinct_subcategories(self, category: str,
+                                   status: str = "active") -> List[str]:
+        """Return sorted list of non-empty subcategories for a given category."""
+        with self.db._connect() as conn:
+            rows = conn.execute(
+                "SELECT DISTINCT subcategory FROM markets "
+                "WHERE status=? AND category=? AND subcategory != '' "
+                "ORDER BY subcategory",
+                (status, category),
+            ).fetchall()
+            return [r["subcategory"] for r in rows]
+
     def get_all_markets(self, platform: Optional[str] = None,
                         status: str = "active",
-                        category: Optional[str] = None) -> List[Dict[str, Any]]:
+                        category: Optional[str] = None,
+                        subcategory: Optional[str] = None) -> List[Dict[str, Any]]:
         with self.db._connect() as conn:
             clauses = ["status=?"]
             params: list = [status]
@@ -81,6 +95,9 @@ class MarketQueries:
             if category:
                 clauses.append("category=?")
                 params.append(category)
+            if subcategory:
+                clauses.append("subcategory=?")
+                params.append(subcategory)
             where = " AND ".join(clauses)
             rows = conn.execute(
                 f"SELECT * FROM markets WHERE {where} ORDER BY volume DESC",

@@ -35,6 +35,7 @@ class DatabaseManager:
                     title TEXT NOT NULL,
                     description TEXT DEFAULT '',
                     category TEXT DEFAULT '',
+                    subcategory TEXT DEFAULT '',
                     status TEXT DEFAULT 'active',
                     yes_price REAL,
                     no_price REAL,
@@ -192,5 +193,14 @@ class DatabaseManager:
                     ON whale_trades(usdc_size);
                 CREATE INDEX IF NOT EXISTS idx_trader_positions_trader
                     ON trader_positions(trader_id, snapshot_time);
+                CREATE INDEX IF NOT EXISTS idx_markets_category_sub
+                    ON markets(category, subcategory);
             """)
+
+            # Migration: add subcategory column to existing databases
+            try:
+                conn.execute("ALTER TABLE markets ADD COLUMN subcategory TEXT DEFAULT ''")
+            except Exception:
+                pass  # Column already exists
+
             conn.commit()

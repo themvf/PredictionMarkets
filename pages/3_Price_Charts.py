@@ -21,14 +21,22 @@ queries = init_queries(db)
 
 st.title("Price Charts")
 
-# Market selector with category filter
-col_cat, col_market = st.columns([1, 3])
+# Market selector with category + subcategory filters
+col_cat, col_sub, col_market = st.columns([1, 1, 3])
 with col_cat:
     categories = queries.get_distinct_categories()
     chart_category = st.selectbox("Category", ["All"] + categories)
+with col_sub:
+    if chart_category != "All":
+        subcategories = queries.get_distinct_subcategories(chart_category)
+        chart_subcategory = st.selectbox("Subcategory", ["All"] + subcategories)
+    else:
+        chart_subcategory = "All"
+        st.selectbox("Subcategory", ["All"], disabled=True)
 
 cat_filter = None if chart_category == "All" else chart_category
-markets = queries.get_all_markets(category=cat_filter)
+sub_filter = None if chart_subcategory == "All" else chart_subcategory
+markets = queries.get_all_markets(category=cat_filter, subcategory=sub_filter)
 if not markets:
     st.info("No markets available. Run agents to populate data.")
     st.stop()

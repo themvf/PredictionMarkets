@@ -16,6 +16,7 @@ class NormalizedMarket:
     title: str = ""
     description: str = ""
     category: str = ""
+    subcategory: str = ""
     status: str = "active"              # active, closed, settled
     yes_price: Optional[float] = None
     no_price: Optional[float] = None
