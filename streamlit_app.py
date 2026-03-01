@@ -6,7 +6,18 @@ Initializes database, API clients, and agent registry on startup.
 
 import streamlit as st
 from pathlib import Path
+import os
 import sys
+
+# Bridge Streamlit Cloud secrets to environment variables.
+# st.secrets is the reliable way to read secrets on Streamlit Cloud,
+# but config.py uses os.getenv(). This ensures they stay in sync.
+try:
+    for key, value in st.secrets.items():
+        if isinstance(value, str) and key not in os.environ:
+            os.environ[key] = value
+except Exception:
+    pass  # No secrets configured (local dev)
 
 # Add project root to path
 PROJECT_DIR = Path(__file__).resolve().parent
