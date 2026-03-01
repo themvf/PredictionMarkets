@@ -294,6 +294,14 @@ class DatabaseManager:
                     snapshot_time TEXT DEFAULT (datetime('now'))
                 );
 
+                CREATE TABLE IF NOT EXISTS trader_watchlist (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    trader_id INTEGER NOT NULL REFERENCES traders(id),
+                    notes TEXT DEFAULT '',
+                    created_at TEXT DEFAULT (datetime('now')),
+                    UNIQUE(trader_id)
+                );
+
                 -- Performance indexes
                 CREATE INDEX IF NOT EXISTS idx_price_snapshots_market_time
                     ON price_snapshots(market_id, timestamp);
@@ -489,6 +497,16 @@ class DatabaseManager:
                     redeemable INTEGER DEFAULT 0,
                     event_slug TEXT DEFAULT '',
                     snapshot_time TEXT DEFAULT ''
+                )
+            """)
+
+            conn.execute("""
+                CREATE TABLE IF NOT EXISTS trader_watchlist (
+                    id SERIAL PRIMARY KEY,
+                    trader_id INTEGER NOT NULL REFERENCES traders(id),
+                    notes TEXT DEFAULT '',
+                    created_at TEXT DEFAULT '',
+                    UNIQUE(trader_id)
                 )
             """)
 

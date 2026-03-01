@@ -108,8 +108,22 @@ with col4:
     pv = trader.get("portfolio_value", 0) or 0
     st.metric("Portfolio Value", f"${pv:,.2f}")
 
-# Refresh positions button
-if st.button("Refresh Positions"):
+# Action buttons
+col_refresh, col_watchlist, _spacer = st.columns([1, 1, 4])
+with col_watchlist:
+    watched = queries.is_on_watchlist(trader["id"])
+    wl_label = "★ On Watchlist" if watched else "☆ Add to Watchlist"
+    if st.button(wl_label, key=f"watchlist_btn_{trader['id']}"):
+        if watched:
+            queries.remove_from_watchlist(trader["id"])
+        else:
+            queries.add_to_watchlist(trader["id"])
+        st.rerun()
+
+with col_refresh:
+    refresh_clicked = st.button("Refresh Positions")
+
+if refresh_clicked:
     with st.spinner("Fetching latest positions..."):
         try:
             context = get_context()
@@ -298,7 +312,7 @@ if history_key in st.session_state:
 
         # Format currency columns for display
         df["Size ($)"] = df["Size ($)"].apply(
-            lambda x: f"${x:,.0f}" if x else "—"
+            lambda x: f"${x:,.0f}" if x is not None else "—"
         )
         df["Position P&L"] = df["Position P&L"].apply(
             lambda x: f"${x:,.2f}" if x is not None and not (isinstance(x, float) and math.isnan(x)) else "—"

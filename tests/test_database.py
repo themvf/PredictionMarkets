@@ -33,7 +33,8 @@ def db(db_path):
         yield mgr
         with mgr._connect() as conn:
             for table in [
-                "trader_positions", "whale_trades", "traders",
+                "trader_watchlist", "trader_positions",
+                "whale_trades", "traders",
                 "agent_logs", "insights", "alerts",
                 "analysis_results", "price_snapshots",
                 "market_pairs", "markets",
@@ -73,6 +74,7 @@ class TestDatabaseSchema:
             "markets", "market_pairs", "price_snapshots",
             "analysis_results", "alerts", "insights", "agent_logs",
             "traders", "whale_trades", "trader_positions",
+            "trader_watchlist",
         }
         assert expected.issubset(table_names)
 
@@ -392,3 +394,42 @@ class TestFirstTimeTrades:
         # $2K threshold should include it
         results = queries.get_first_time_trades(categories=["Tech"], min_size=2000)
         assert len(results) == 1
+
+
+class TestWatchlist:
+    def test_add_and_get_watchlist(self, queries):
+        tid = queries.upsert_trader(Trader(
+            proxy_wallet="0xWATCH1", user_name="WatchMe",
+            total_pnl=5000.0,
+        ))
+        result = queries.add_to_watchlist(tid)
+        assert result is True
+
+        watchlist = queries.get_watchlist()
+        assert len(watchlist) == 1
+        assert watchlist[0]["user_name"] == "WatchMe"
+        assert watchlist[0]["watched_since"] is not None
+
+    def test_remove_from_watchlist(self, queries):
+        tid = queries.upsert_trader(Trader(proxy_wallet="0xWATCH2"))
+        queries.add_to_watchlist(tid)
+        assert len(queries.get_watchlist()) == 1
+
+        queries.remove_from_watchlist(tid)
+        assert len(queries.get_watchlist()) == 0
+
+    def test_duplicate_add_is_safe(self, queries):
+        tid = queries.upsert_trader(Trader(proxy_wallet="0xWATCH3"))
+        assert queries.add_to_watchlist(tid) is True
+        assert queries.add_to_watchlist(tid) is False  # duplicate
+        assert len(queries.get_watchlist()) == 1
+
+    def test_is_on_watchlist(self, queries):
+        tid = queries.upsert_trader(Trader(proxy_wallet="0xWATCH4"))
+        assert queries.is_on_watchlist(tid) is False
+
+        queries.add_to_watchlist(tid)
+        assert queries.is_on_watchlist(tid) is True
+
+        queries.remove_from_watchlist(tid)
+        assert queries.is_on_watchlist(tid) is False

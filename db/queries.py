@@ -776,3 +776,56 @@ class MarketQueries:
                 ORDER BY current_value DESC
             """, (trader_id, latest_time["t"])).fetchall()
             return [dict(r) for r in rows]
+
+    # ── Trader Watchlist ──────────────────────────────────────
+
+    def add_to_watchlist(self, trader_id: int) -> bool:
+        """Add a trader to the watchlist. Returns True if added, False if already on list."""
+        with self.db._connect() as conn:
+            try:
+                conn.execute(
+                    "INSERT INTO trader_watchlist (trader_id, created_at) VALUES (?, ?)",
+                    (trader_id, _now()),
+                )
+                return True
+            except Exception as e:
+                err_str = str(e).lower()
+                if "unique" in err_str or "duplicate" in err_str:
+                    return False
+                raise
+
+    def remove_from_watchlist(self, trader_id: int) -> None:
+        """Remove a trader from the watchlist."""
+        with self.db._connect() as conn:
+            conn.execute(
+                "DELETE FROM trader_watchlist WHERE trader_id=?",
+                (trader_id,),
+            )
+
+    def get_watchlist(self) -> List[Dict[str, Any]]:
+        """Get all watched traders with their full profile details."""
+        with self.db._connect() as conn:
+            rows = conn.execute("""
+                SELECT t.*, w.created_at as watched_since
+                FROM trader_watchlist w
+                JOIN traders t ON w.trader_id = t.id
+                ORDER BY w.created_at DESC
+            """).fetchall()
+            return [dict(r) for r in rows]
+
+    def is_on_watchlist(self, trader_id: int) -> bool:
+        """Check if a trader is on the watchlist."""
+        with self.db._connect() as conn:
+            row = conn.execute(
+                "SELECT 1 FROM trader_watchlist WHERE trader_id=?",
+                (trader_id,),
+            ).fetchone()
+            return row is not None
+
+    def get_watchlist_ids(self) -> set:
+        """Return the set of trader_ids currently on the watchlist (single query)."""
+        with self.db._connect() as conn:
+            rows = conn.execute(
+                "SELECT trader_id FROM trader_watchlist"
+            ).fetchall()
+            return {r["trader_id"] for r in rows}

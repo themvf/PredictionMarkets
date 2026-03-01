@@ -82,10 +82,15 @@ if not traders:
 
 st.metric("Traders Tracked", len(traders))
 
+# Pre-fetch watchlist IDs in one query (avoids N+1 queries in the loop)
+watched_ids = queries.get_watchlist_ids()
+
 for i, trader in enumerate(traders):
     rank = i + 1
     with st.container(border=True):
-        col_rank, col_name, col_pnl, col_vol, col_action = st.columns([0.5, 3, 1.5, 1.5, 1])
+        col_rank, col_name, col_pnl, col_vol, col_watch, col_action = st.columns(
+            [0.5, 3, 1.5, 1.5, 0.7, 1]
+        )
 
         with col_rank:
             medal = {1: "🥇", 2: "🥈", 3: "🥉"}.get(rank, f"#{rank}")
@@ -106,6 +111,16 @@ for i, trader in enumerate(traders):
         with col_vol:
             vol = trader.get("total_volume", 0) or 0
             st.metric("Volume", f"${vol:,.0f}")
+
+        with col_watch:
+            watched = trader["id"] in watched_ids
+            label = "★" if watched else "☆"
+            if st.button(label, key=f"watch_{trader['id']}"):
+                if watched:
+                    queries.remove_from_watchlist(trader["id"])
+                else:
+                    queries.add_to_watchlist(trader["id"])
+                st.rerun()
 
         with col_action:
             if st.button("Profile", key=f"profile_{trader['id']}"):
