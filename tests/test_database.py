@@ -14,7 +14,7 @@ from db.database import DatabaseManager
 from db.queries import MarketQueries
 from db.models import (
     NormalizedMarket, PriceSnapshot, Alert, MarketPair,
-    AnalysisResult, Insight, AgentLog,
+    AnalysisResult, Insight, AgentLog, Trader, WhaleTrade,
 )
 
 
@@ -303,3 +303,92 @@ class TestMarketPairs:
         pairs = queries.get_all_pairs()
         assert len(pairs) == 1
         assert pairs[0]["match_confidence"] == 0.85
+
+
+class TestFirstTimeTrades:
+    def test_returns_earliest_trade_per_trader(self, queries):
+        # Create a polymarket market with category
+        mid = queries.upsert_market(NormalizedMarket(
+            platform="polymarket", platform_id="COND-POLITICS-1",
+            title="Will X win?", category="Politics",
+        ))
+        # Create a trader
+        tid = queries.upsert_trader(Trader(
+            proxy_wallet="0xFIRSTTIME1", user_name="Alice",
+        ))
+        # Insert two trades — earlier and later
+        queries.insert_whale_trade(WhaleTrade(
+            trader_id=tid, proxy_wallet="0xFIRSTTIME1",
+            condition_id="COND-POLITICS-1", market_title="Will X win?",
+            side="BUY", usdc_size=10000, transaction_hash="tx-first-1",
+            trade_timestamp=1000000,
+        ))
+        queries.insert_whale_trade(WhaleTrade(
+            trader_id=tid, proxy_wallet="0xFIRSTTIME1",
+            condition_id="COND-POLITICS-1", market_title="Will X win?",
+            side="SELL", usdc_size=20000, transaction_hash="tx-second-1",
+            trade_timestamp=2000000,
+        ))
+
+        results = queries.get_first_time_trades(categories=["Politics"])
+        assert len(results) == 1
+        assert results[0]["trade_timestamp"] == 1000000
+        assert results[0]["user_name"] == "Alice"
+
+    def test_filters_by_category(self, queries):
+        # Politics market
+        queries.upsert_market(NormalizedMarket(
+            platform="polymarket", platform_id="COND-POL-2",
+            title="Election Q", category="Politics",
+        ))
+        # Sports market (should be excluded)
+        queries.upsert_market(NormalizedMarket(
+            platform="polymarket", platform_id="COND-SPORT-1",
+            title="NBA game", category="Sports",
+        ))
+        t1 = queries.upsert_trader(Trader(proxy_wallet="0xCAT-POL"))
+        t2 = queries.upsert_trader(Trader(proxy_wallet="0xCAT-SPORT"))
+
+        queries.insert_whale_trade(WhaleTrade(
+            trader_id=t1, proxy_wallet="0xCAT-POL",
+            condition_id="COND-POL-2", market_title="Election Q",
+            side="BUY", usdc_size=8000, transaction_hash="tx-cat-pol",
+            trade_timestamp=3000000,
+        ))
+        queries.insert_whale_trade(WhaleTrade(
+            trader_id=t2, proxy_wallet="0xCAT-SPORT",
+            condition_id="COND-SPORT-1", market_title="NBA game",
+            side="BUY", usdc_size=9000, transaction_hash="tx-cat-sport",
+            trade_timestamp=3000000,
+        ))
+
+        # Only Politics
+        results = queries.get_first_time_trades(categories=["Politics"])
+        assert len(results) == 1
+        assert results[0]["category"] == "Politics"
+
+        # Only Sports — should not appear with default Politics/Tech/Finance
+        results = queries.get_first_time_trades(categories=["Sports"])
+        assert len(results) == 1
+        assert results[0]["category"] == "Sports"
+
+    def test_filters_by_min_size(self, queries):
+        queries.upsert_market(NormalizedMarket(
+            platform="polymarket", platform_id="COND-TECH-1",
+            title="AI milestone", category="Tech",
+        ))
+        tid = queries.upsert_trader(Trader(proxy_wallet="0xSIZE-TEST"))
+        queries.insert_whale_trade(WhaleTrade(
+            trader_id=tid, proxy_wallet="0xSIZE-TEST",
+            condition_id="COND-TECH-1", market_title="AI milestone",
+            side="BUY", usdc_size=3000, transaction_hash="tx-small",
+            trade_timestamp=4000000,
+        ))
+
+        # $5K threshold should exclude the $3K trade
+        results = queries.get_first_time_trades(categories=["Tech"], min_size=5000)
+        assert len(results) == 0
+
+        # $2K threshold should include it
+        results = queries.get_first_time_trades(categories=["Tech"], min_size=2000)
+        assert len(results) == 1

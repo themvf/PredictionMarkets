@@ -690,6 +690,45 @@ class MarketQueries:
             ).fetchone()
             return row["cnt"] if row else 0
 
+    def get_first_time_trades(
+        self,
+        categories: Optional[List[str]] = None,
+        min_size: float = 5000,
+        limit: int = 100,
+    ) -> List[Dict[str, Any]]:
+        """Get each trader's earliest whale trade, filtered by category and min size.
+
+        Returns first-time predictions where the trader's debut trade
+        meets the size threshold and falls in specified market categories.
+        """
+        if not categories:
+            categories = ["Politics", "Tech", "Finance"]
+
+        placeholders = ",".join(["?"] * len(categories))
+        with self.db._connect() as conn:
+            rows = conn.execute(f"""
+                WITH first_trades AS (
+                    SELECT trader_id, MIN(trade_timestamp) as first_ts
+                    FROM whale_trades
+                    GROUP BY trader_id
+                )
+                SELECT wt.*, t.user_name, t.profile_image, t.verified_badge,
+                       t.first_seen, m.category, m.subcategory, m.title as market_name
+                FROM whale_trades wt
+                JOIN first_trades ft
+                    ON wt.trader_id = ft.trader_id
+                    AND wt.trade_timestamp = ft.first_ts
+                LEFT JOIN traders t ON wt.trader_id = t.id
+                LEFT JOIN markets m
+                    ON wt.condition_id = m.platform_id
+                    AND m.platform = 'polymarket'
+                WHERE wt.usdc_size >= ?
+                  AND m.category IN ({placeholders})
+                ORDER BY wt.trade_timestamp DESC
+                LIMIT ?
+            """, (min_size, *categories, limit)).fetchall()
+            return [dict(r) for r in rows]
+
     # ── Trader Positions ──────────────────────────────────────
 
     def insert_trader_position(self, pos: TraderPosition) -> int:
