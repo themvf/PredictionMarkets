@@ -12,6 +12,8 @@ if str(PROJECT_DIR) not in sys.path:
     sys.path.insert(0, str(PROJECT_DIR))
 
 from streamlit_app import init_config, init_database, init_queries, get_context
+from utils.categories import normalize_category
+import math
 
 st.set_page_config(page_title="Trader Profile", page_icon="👤", layout="wide")
 
@@ -213,8 +215,14 @@ if st.button("Load Trade History", type="primary"):
                 for p in raw_positions:
                     cid = p.get("conditionId", "")
                     if cid:
+                        try:
+                            pnl_val = float(p.get("cashPnl") or 0)
+                            if math.isnan(pnl_val):
+                                pnl_val = None
+                        except (ValueError, TypeError):
+                            pnl_val = None
                         pos_map[cid] = {
-                            "cash_pnl": float(p.get("cashPnl") or 0),
+                            "cash_pnl": pnl_val,
                             "redeemable": bool(p.get("redeemable")),
                             "size": float(p.get("size") or 0),
                         }
@@ -261,11 +269,17 @@ if st.button("Load Trade History", type="primary"):
                         size = float(t.get("size") or 0)
                         usdc = price * size if price and size else 0
 
+                    # Category: DB lookup first, fall back to title inference
+                    title = t.get("title", "Unknown")
+                    category = cat_map.get(cid, "")
+                    if not category:
+                        category = normalize_category("", title)
+
                     history_rows.append({
                         "Date": date_str,
                         "Status": status,
-                        "Category": cat_map.get(cid, ""),
-                        "Event": t.get("title", "Unknown"),
+                        "Category": category,
+                        "Event": title,
                         "Side": t.get("side", ""),
                         "Size ($)": usdc,
                         "Position P&L": pos.get("cash_pnl"),
@@ -287,7 +301,7 @@ if history_key in st.session_state:
             lambda x: f"${x:,.0f}" if x else "—"
         )
         df["Position P&L"] = df["Position P&L"].apply(
-            lambda x: f"${x:,.2f}" if x is not None else "—"
+            lambda x: f"${x:,.2f}" if x is not None and not (isinstance(x, float) and math.isnan(x)) else "—"
         )
 
         st.dataframe(df, use_container_width=True, hide_index=True)
