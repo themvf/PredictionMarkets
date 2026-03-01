@@ -49,8 +49,8 @@ with col_refresh:
                         limit=50,
                     )
                     from db.models import Trader
-                    for entry in leaders:
-                        trader = Trader(
+                    traders_to_upsert = [
+                        Trader(
                             proxy_wallet=entry.get("proxyWallet", ""),
                             user_name=entry.get("userName", ""),
                             profile_image=entry.get("profileImage", ""),
@@ -59,8 +59,11 @@ with col_refresh:
                             total_pnl=entry.get("pnl"),
                             total_volume=entry.get("vol"),
                         )
-                        queries.upsert_trader(trader)
-                    st.success(f"Fetched {len(leaders)} traders.")
+                        for entry in leaders
+                        if entry.get("proxyWallet")
+                    ]
+                    queries.upsert_traders_batch(traders_to_upsert)
+                    st.success(f"Fetched {len(traders_to_upsert)} traders.")
                     st.rerun()
                 else:
                     st.error("Polymarket client not available.")
