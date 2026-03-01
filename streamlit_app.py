@@ -139,12 +139,16 @@ def main():
         openai_ok = "openai_client" in clients
         slack_ok = init_slack_notifier(config).enabled
 
+        db_is_pg = db._backend == "postgres"
+
         col1, col2 = st.columns(2)
         col1.metric("Kalshi", "OK" if kalshi_ok else "OFF")
         col2.metric("Poly", "OK" if poly_ok else "OFF")
         col3, col4 = st.columns(2)
         col3.metric("GPT-4o", "OK" if openai_ok else "OFF")
         col4.metric("Slack", "OK" if slack_ok else "OFF")
+        col5, col6 = st.columns(2)
+        col5.metric("DB", "Neon PG" if db_is_pg else "SQLite")
 
         if not kalshi_ok:
             st.warning(f"Kalshi: {clients.get('kalshi_error', 'Not configured')}")
