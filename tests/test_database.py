@@ -25,11 +25,12 @@ def db_path(tmp_path):
 
 @pytest.fixture
 def db(db_path):
-    database_url = os.getenv("DATABASE_URL")
+    # Use TEST_DATABASE_URL (not DATABASE_URL) for intentional Postgres testing.
+    # This prevents pytest from accidentally wiping production Neon data.
+    database_url = os.getenv("TEST_DATABASE_URL")
     if database_url:
         mgr = DatabaseManager(database_url=database_url)
         yield mgr
-        # Clean up test data from shared PostgreSQL database
         with mgr._connect() as conn:
             for table in [
                 "trader_positions", "whale_trades", "traders",
@@ -41,7 +42,6 @@ def db(db_path):
     else:
         mgr = DatabaseManager(db_path=db_path)
         yield mgr
-        # Close WAL connections to avoid Windows PermissionError on cleanup
         try:
             with mgr._connect() as conn:
                 conn.execute("PRAGMA wal_checkpoint(TRUNCATE)")
