@@ -159,6 +159,43 @@ class TestMarketQueries:
         assert "Bitcoin" in results[0]["title"]
 
 
+    def test_upsert_markets_batch(self, queries):
+        markets = [
+            NormalizedMarket(
+                platform="polymarket", platform_id=f"BATCH-{i}",
+                title=f"Batch Market {i}", volume=i * 100,
+            )
+            for i in range(10)
+        ]
+        count = queries.upsert_markets_batch(markets)
+        assert count == 10
+
+        all_markets = queries.get_all_markets(platform="polymarket")
+        assert len(all_markets) == 10
+
+    def test_upsert_markets_batch_updates(self, queries):
+        markets = [
+            NormalizedMarket(
+                platform="polymarket", platform_id="BUPD-1",
+                title="Original Title", yes_price=0.50,
+            ),
+        ]
+        queries.upsert_markets_batch(markets)
+
+        # Update with new price
+        markets[0].title = "Updated Title"
+        markets[0].yes_price = 0.80
+        queries.upsert_markets_batch(markets)
+
+        result = queries.search_markets("Updated Title")
+        assert len(result) == 1
+        assert result[0]["yes_price"] == 0.80
+
+    def test_upsert_markets_batch_empty(self, queries):
+        count = queries.upsert_markets_batch([])
+        assert count == 0
+
+
 class TestPriceSnapshots:
     def test_insert_and_get_history(self, queries):
         market_id = queries.upsert_market(NormalizedMarket(

@@ -60,6 +60,46 @@ class MarketQueries:
             ).fetchone()
             return row["id"]
 
+    def upsert_markets_batch(self, markets: List[NormalizedMarket]) -> int:
+        """Batch upsert markets in a single connection. Returns count upserted.
+
+        Unlike upsert_market() which opens a new connection per market,
+        this method processes ALL markets in one transaction — critical
+        for performance when writing to Neon PostgreSQL over the network.
+        """
+        if not markets:
+            return 0
+        with self.db._connect() as conn:
+            now = _now()
+            for market in markets:
+                conn.execute("""
+                    INSERT INTO markets (platform, platform_id, title, description,
+                        category, subcategory, status, yes_price, no_price, volume,
+                        liquidity, close_time, url, last_updated, raw_data)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    ON CONFLICT(platform, platform_id) DO UPDATE SET
+                        title=excluded.title,
+                        description=excluded.description,
+                        category=excluded.category,
+                        subcategory=excluded.subcategory,
+                        status=excluded.status,
+                        yes_price=excluded.yes_price,
+                        no_price=excluded.no_price,
+                        volume=excluded.volume,
+                        liquidity=excluded.liquidity,
+                        close_time=excluded.close_time,
+                        url=excluded.url,
+                        last_updated=excluded.last_updated,
+                        raw_data=excluded.raw_data
+                """, (
+                    market.platform, market.platform_id, market.title,
+                    market.description, market.category, market.subcategory,
+                    market.status, market.yes_price, market.no_price, market.volume,
+                    market.liquidity, market.close_time, market.url,
+                    now, market.raw_data,
+                ))
+            return len(markets)
+
     def get_distinct_categories(self, status: str = "active") -> List[str]:
         """Return sorted list of non-empty categories present in the markets table."""
         with self.db._connect() as conn:
