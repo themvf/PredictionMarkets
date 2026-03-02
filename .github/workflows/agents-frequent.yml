@@ -1,0 +1,59 @@
+# Runs high-frequency agents: collection, alert, whale
+# These agents need near-real-time data updates.
+#
+# GitHub Actions minutes budget (private repos):
+#   Free tier: 2,000 min/month
+#   Every 15 min × ~2 min/run = ~5,760 min/month (over budget for private repos)
+#   Adjust the cron interval below if you need to stay under the free-tier limit.
+#   Public repos: unlimited minutes.
+#
+# NOTE: GitHub disables scheduled workflows after 60 days of repo inactivity.
+#       Push a commit or manually trigger the workflow to re-enable.
+
+name: Agents – Frequent (Collection, Alert, Whale)
+
+on:
+  schedule:
+    - cron: "*/15 * * * *"   # Every 15 minutes
+  workflow_dispatch:          # Manual trigger from GitHub UI
+
+concurrency:
+  group: agents-frequent
+  cancel-in-progress: false   # Let running agents finish
+
+jobs:
+  run-agents:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      - name: Run collection agent
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+          SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
+        run: python run_agent.py collection
+
+      - name: Run alert agent
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+          SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
+        run: python run_agent.py alert
+
+      - name: Run whale agent
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+          SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
+        run: python run_agent.py whale

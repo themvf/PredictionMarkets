@@ -34,6 +34,7 @@ const NAV_ITEMS = [
   { href: "/agents", label: "Agent Status", icon: Bot },
   { href: "/leaderboard", label: "Leaderboard", icon: Trophy },
   { href: "/whales", label: "Whale Tracker", icon: Waves },
+  { href: "/traders", label: "Trader Profile", icon: User },
   { href: "/first-time", label: "First-Time Trades", icon: Sparkles },
   { href: "/watchlist", label: "Watchlist", icon: Star },
 ] as const;

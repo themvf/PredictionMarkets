@@ -1,0 +1,77 @@
+# Runs lower-frequency agents: discovery, analyzer, trader, insight
+# These agents scan for new markets, analyze pairs, and generate reports.
+#
+# Schedule:
+#   Discovery + Trader + Analyzer: every 30 minutes
+#   Insight: every 60 minutes (runs only on the hour via step condition)
+
+name: Agents – Scheduled (Discovery, Analyzer, Trader, Insight)
+
+on:
+  schedule:
+    - cron: "5 * * * *"      # Every hour at :05 — runs all agents including insight
+    - cron: "35 * * * *"     # Every hour at :35 — runs discovery/analyzer/trader only
+  workflow_dispatch:
+    inputs:
+      include_insight:
+        description: "Also run the insight agent?"
+        required: false
+        default: "true"
+        type: choice
+        options:
+          - "true"
+          - "false"
+
+concurrency:
+  group: agents-scheduled
+  cancel-in-progress: false
+
+jobs:
+  run-agents:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      - name: Run discovery agent
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+          SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
+        run: python run_agent.py discovery
+
+      - name: Run analyzer agent
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+          SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
+        run: python run_agent.py analyzer
+
+      - name: Run trader agent
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+          SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
+        run: python run_agent.py trader
+
+      # Insight agent runs only on the :05 cron (once/hour) or manual dispatch.
+      # github.event.schedule gives us the cron string that triggered the run,
+      # so we can skip insight on the :35 run.
+      - name: Run insight agent
+        if: >-
+          github.event_name == 'workflow_dispatch' && inputs.include_insight == 'true'
+          || github.event_name == 'schedule' && github.event.schedule == '5 * * * *'
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+          SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
+        run: python run_agent.py insight
