@@ -13,8 +13,8 @@
 name: Agents – Frequent (Collection, Alert, Whale)
 
 on:
-  schedule:
-    - cron: "*/15 * * * *"   # Every 15 minutes
+  # schedule:
+  #   - cron: "*/15 * * * *"   # Every 15 minutes — uncomment when ready
   workflow_dispatch:          # Manual trigger from GitHub UI
 
 concurrency:
