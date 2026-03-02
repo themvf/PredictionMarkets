@@ -1,181 +1,169 @@
 import { Suspense } from "react";
-import {
-  Store,
-  Bell,
-  Users,
-  Waves,
-  Brain,
-  Bot,
-  TrendingUp,
-  TrendingDown,
-} from "lucide-react";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
-import { getDashboardStats } from "@/db/queries/dashboard";
-import { formatRelativeTime } from "@/lib/utils";
+import { getMarkets } from "@/db/queries/markets";
+import { getSmartFilteredMarkets } from "@/db/queries/smart-filters";
+import { HeroSection } from "@/components/home/hero-section";
+import { CategoryPills } from "@/components/home/category-pills";
+import { SearchHero } from "@/components/home/search-hero";
+import { FeaturedMarketCard } from "@/components/home/featured-market-card";
+import { SmartFilterPills } from "@/components/home/smart-filter-pills";
+import { CategorySidebar } from "@/components/home/category-sidebar";
+import { MarketCard } from "@/components/markets/market-card";
+import { Pagination } from "@/components/shared/pagination";
+import { SMART_FILTERS } from "@/lib/constants";
 
 export const dynamic = "force-dynamic";
 
-function StatCard({
-  title,
-  value,
-  icon: Icon,
-  subtitle,
+interface Props {
+  searchParams: Promise<{
+    category?: string;
+    search?: string;
+    filter?: string;
+    page?: string;
+    sort?: string;
+  }>;
+}
+
+async function MarketGrid({
+  category,
+  search,
+  filter,
+  page,
+  sort,
 }: {
-  title: string;
-  value: string | number;
-  icon: React.ElementType;
-  subtitle?: string;
+  category?: string;
+  search?: string;
+  filter?: string;
+  page: number;
+  sort?: string;
 }) {
-  return (
-    <Card>
-      <CardHeader className="flex flex-row items-center justify-between pb-2">
-        <CardTitle className="text-sm font-medium text-muted-foreground">
-          {title}
-        </CardTitle>
-        <Icon className="h-4 w-4 text-muted-foreground" />
-      </CardHeader>
-      <CardContent>
-        <div className="text-2xl font-bold">{value}</div>
-        {subtitle && (
-          <p className="text-xs text-muted-foreground mt-1">{subtitle}</p>
-        )}
-      </CardContent>
-    </Card>
-  );
-}
+  // Use smart filter if one is active, otherwise regular query
+  const validFilter = SMART_FILTERS.find((f) => f.key === filter);
 
-async function DashboardContent() {
-  const stats = await getDashboardStats();
+  if (validFilter) {
+    const data = await getSmartFilteredMarkets(filter!);
+    const filterLabel = validFilter.label;
 
-  return (
-    <>
-      {/* Stat cards */}
-      <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
-        <StatCard
-          title="Total Markets"
-          value={stats.totalMarkets.toLocaleString()}
-          icon={Store}
-          subtitle={`${stats.activeMarkets.toLocaleString()} active`}
-        />
-        <StatCard
-          title="Active Alerts"
-          value={stats.unacknowledgedAlerts}
-          icon={Bell}
-        />
-        <StatCard
-          title="Traders Tracked"
-          value={stats.totalTraders.toLocaleString()}
-          icon={Users}
-        />
-        <StatCard
-          title="Whale Trades"
-          value={stats.totalWhaleTrades.toLocaleString()}
-          icon={Waves}
-        />
+    if (data.length === 0) {
+      return (
+        <div className="flex min-h-[20vh] flex-col items-center justify-center text-muted-foreground gap-2">
+          <p>No markets found for &ldquo;{filterLabel}&rdquo;.</p>
+          <p className="text-xs">Try a different filter or check back later.</p>
+        </div>
+      );
+    }
+
+    return (
+      <div className="space-y-4">
+        <p className="text-sm text-muted-foreground">
+          {data.length} market{data.length !== 1 ? "s" : ""} &mdash;{" "}
+          <span className="font-medium text-foreground">{filterLabel}</span>
+        </p>
+        <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
+          {data.map((market) => (
+            <MarketCard key={market.id} market={market} />
+          ))}
+        </div>
       </div>
+    );
+  }
 
-      {/* Latest Insight */}
-      {stats.latestInsight && (
-        <Card>
-          <CardHeader className="flex flex-row items-center gap-2 pb-2">
-            <Brain className="h-4 w-4 text-muted-foreground" />
-            <CardTitle className="text-sm font-medium">
-              Latest AI Insight
-            </CardTitle>
-          </CardHeader>
-          <CardContent>
-            <p className="font-medium">{stats.latestInsight.title}</p>
-            <p className="text-xs text-muted-foreground mt-1">
-              {formatRelativeTime(stats.latestInsight.createdAt)}
-            </p>
-          </CardContent>
-        </Card>
-      )}
+  const result = await getMarkets({
+    category,
+    search,
+    page,
+    sort: sort || "volume_desc",
+    status: "active",
+  });
 
-      {/* Agent Status */}
-      {stats.recentAgentRuns.length > 0 && (
-        <Card>
-          <CardHeader className="flex flex-row items-center gap-2 pb-2">
-            <Bot className="h-4 w-4 text-muted-foreground" />
-            <CardTitle className="text-sm font-medium">
-              Recent Agent Runs
-            </CardTitle>
-          </CardHeader>
-          <CardContent>
-            <div className="space-y-3">
-              {stats.recentAgentRuns.map((run) => (
-                <div
-                  key={run.agentName}
-                  className="flex items-center justify-between"
-                >
-                  <div className="flex items-center gap-2">
-                    <span className="text-sm font-medium capitalize">
-                      {run.agentName}
-                    </span>
-                    <Badge
-                      variant={
-                        run.status === "success" ? "default" : "destructive"
-                      }
-                      className="text-xs"
-                    >
-                      {run.status}
-                    </Badge>
-                  </div>
-                  <span className="text-xs text-muted-foreground">
-                    {formatRelativeTime(run.completedAt)}
-                  </span>
-                </div>
-              ))}
-            </div>
-          </CardContent>
-        </Card>
-      )}
-    </>
-  );
-}
+  if (result.data.length === 0) {
+    return (
+      <div className="flex min-h-[20vh] items-center justify-center text-muted-foreground">
+        No markets found matching your filters.
+      </div>
+    );
+  }
 
-function DashboardSkeleton() {
   return (
-    <>
-      <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
-        {Array.from({ length: 4 }).map((_, i) => (
-          <Card key={i}>
-            <CardHeader className="pb-2">
-              <Skeleton className="h-4 w-24" />
-            </CardHeader>
-            <CardContent>
-              <Skeleton className="h-8 w-16" />
-            </CardContent>
-          </Card>
+    <div className="space-y-4">
+      <p className="text-sm text-muted-foreground">
+        {result.total.toLocaleString()} market
+        {result.total !== 1 ? "s" : ""}
+      </p>
+      <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
+        {result.data.map((market) => (
+          <MarketCard key={market.id} market={market} />
         ))}
       </div>
-      <Card>
-        <CardHeader className="pb-2">
-          <Skeleton className="h-4 w-32" />
-        </CardHeader>
-        <CardContent>
-          <Skeleton className="h-4 w-full" />
-          <Skeleton className="h-4 w-2/3 mt-2" />
-        </CardContent>
-      </Card>
-    </>
+      {result.totalPages > 1 && (
+        <Pagination
+          page={result.page}
+          totalPages={result.totalPages}
+          total={result.total}
+          pageSize={result.pageSize}
+        />
+      )}
+    </div>
   );
 }
 
-export default function DashboardPage() {
+function MarketGridSkeleton() {
   return (
-    <div className="space-y-6">
-      <div>
-        <h1 className="text-3xl font-bold tracking-tight">Dashboard</h1>
-        <p className="text-muted-foreground">
-          Prediction market analytics overview
-        </p>
-      </div>
-      <Suspense fallback={<DashboardSkeleton />}>
-        <DashboardContent />
+    <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
+      {Array.from({ length: 9 }).map((_, i) => (
+        <Skeleton key={i} className="h-36 w-full rounded-xl" />
+      ))}
+    </div>
+  );
+}
+
+export default async function HomePage({ searchParams }: Props) {
+  const params = await searchParams;
+  const page = Math.max(1, Math.min(Number(params.page) || 1, 1000));
+  const showHero = !params.search && !params.filter;
+
+  return (
+    <div>
+      {/* Hero area — hide when actively searching/filtering */}
+      {showHero && (
+        <>
+          <Suspense fallback={<Skeleton className="mx-auto h-40 max-w-xl" />}>
+            <HeroSection />
+          </Suspense>
+          <Suspense fallback={null}>
+            <CategoryPills />
+          </Suspense>
+          <SearchHero />
+          <Suspense
+            fallback={<Skeleton className="mx-auto mt-8 h-40 max-w-3xl" />}
+          >
+            <FeaturedMarketCard />
+          </Suspense>
+        </>
+      )}
+
+      <Suspense fallback={null}>
+        <SmartFilterPills />
       </Suspense>
+
+      {/* Main content: sidebar + grid */}
+      <div className="mx-auto mt-8 flex max-w-7xl gap-6 px-4 pb-12">
+        <Suspense fallback={null}>
+          <CategorySidebar activeCategory={params.category} />
+        </Suspense>
+
+        <div className="flex-1 min-w-0">
+          <Suspense fallback={<MarketGridSkeleton />}>
+            <MarketGrid
+              category={params.category}
+              search={params.search}
+              filter={params.filter}
+              page={page}
+              sort={params.sort}
+            />
+          </Suspense>
+        </div>
+      </div>
     </div>
   );
 }

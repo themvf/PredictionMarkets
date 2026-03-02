@@ -115,3 +115,32 @@ export async function getMarketCategories() {
     .orderBy(markets.category);
   return result.map((r) => r.category).filter(Boolean) as string[];
 }
+
+/** Get the highest-volume active market for the featured card */
+export async function getFeaturedMarket() {
+  const result = await db
+    .select()
+    .from(markets)
+    .where(eq(markets.status, "active"))
+    .orderBy(desc(markets.volume))
+    .limit(1);
+  return result[0] ?? null;
+}
+
+/** Get all categories with their active market counts */
+export async function getCategoriesWithCounts() {
+  return db
+    .select({
+      category: markets.category,
+      count: sql<number>`count(*)`,
+    })
+    .from(markets)
+    .where(
+      and(
+        eq(markets.status, "active"),
+        sql`${markets.category} IS NOT NULL AND ${markets.category} != ''`
+      )
+    )
+    .groupBy(markets.category)
+    .orderBy(desc(sql`count(*)`));
+}

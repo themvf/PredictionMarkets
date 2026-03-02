@@ -54,3 +54,42 @@ export const CATEGORIES = [
 
 /** Default pagination size */
 export const PAGE_SIZE = 50;
+
+/** Smart filter definitions for homepage */
+export const SMART_FILTERS = [
+  {
+    key: "whale_favorites",
+    label: "Whale Favorites",
+    icon: "Waves",
+    className: "border-cyan-400 text-cyan-400 hover:bg-cyan-400/10",
+    activeClassName: "border-cyan-400 text-cyan-400 bg-cyan-400/20",
+  },
+  {
+    key: "closing_soon",
+    label: "Closing Soon",
+    icon: "Clock",
+    className: "border-orange-400 text-orange-400 hover:bg-orange-400/10",
+    activeClassName: "border-orange-400 text-orange-400 bg-orange-400/20",
+  },
+  {
+    key: "near_5050",
+    label: "Near 50/50",
+    icon: "Scale",
+    className: "border-green-400 text-green-400 hover:bg-green-400/10",
+    activeClassName: "border-green-400 text-green-400 bg-green-400/20",
+  },
+  {
+    key: "high_arb",
+    label: "High Arb Potential",
+    icon: "TrendingUp",
+    className: "border-purple-400 text-purple-400 hover:bg-purple-400/10",
+    activeClassName: "border-purple-400 text-purple-400 bg-purple-400/20",
+  },
+  {
+    key: "hottest_24h",
+    label: "Hottest 24h",
+    icon: "Flame",
+    className: "border-red-400 text-red-400 hover:bg-red-400/10",
+    activeClassName: "border-red-400 text-red-400 bg-red-400/20",
+  },
+] as const;
