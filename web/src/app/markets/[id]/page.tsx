@@ -52,6 +52,9 @@ export default async function MarketDetailPage({ params }: Props) {
           {market.category && (
             <Badge variant="secondary">{market.category}</Badge>
           )}
+          {market.subcategory && (
+            <Badge variant="outline">{market.subcategory}</Badge>
+          )}
         </div>
         <h1 className="text-2xl font-bold tracking-tight">{market.title}</h1>
         {market.description && (

@@ -76,6 +76,71 @@ CATEGORY_MAP: dict[str, str] = {
     "kxoscar": "Culture",
 }
 
+# ── Series slug prefix → Clean display category ──────────────────
+# Polymarket's modern markets use seriesSlug instead of category.
+# Matched by prefix: "aapl-neg-risk-weekly" starts with "aapl" → Finance.
+
+SERIES_PREFIX_MAP: dict[str, str] = {
+    # Sports
+    "premier-league": "Sports",
+    "la-liga": "Sports",
+    "bundesliga": "Sports",
+    "serie-a": "Sports",
+    "champions-league": "Sports",
+    "europa-league": "Sports",
+    "nba": "Sports",
+    "nfl": "Sports",
+    "mlb": "Sports",
+    "nhl": "Sports",
+    "atp": "Sports",
+    "wta": "Sports",
+    "counter-strike": "Sports",
+    "league-of-legends": "Sports",
+    "dota": "Sports",
+    "valorant": "Sports",
+    "ufc": "Sports",
+    "f1-": "Sports",
+    "copa-america": "Sports",
+    "rugby": "Sports",
+    "cricket": "Sports",
+    # Finance / Equities
+    "aapl": "Finance",
+    "tsla": "Finance",
+    "msft": "Finance",
+    "nvda": "Finance",
+    "goog": "Finance",
+    "googl": "Finance",
+    "amzn": "Finance",
+    "meta-": "Finance",
+    "spy-": "Finance",
+    "qqq-": "Finance",
+    "nflx": "Finance",
+    "coin-": "Finance",
+    "dis-": "Finance",
+    "bac-": "Finance",
+    "jpm-": "Finance",
+    "earnings-": "Finance",
+    # Crypto
+    "bitcoin": "Crypto",
+    "ethereum": "Crypto",
+    "solana": "Crypto",
+    "bnb-": "Crypto",
+    "xrp-": "Crypto",
+    "dogecoin": "Crypto",
+    "cardano": "Crypto",
+    # Climate & Science
+    "chicago-daily-weather": "Climate & Science",
+    "nyc-daily-weather": "Climate & Science",
+    "la-daily-weather": "Climate & Science",
+    "miami-daily-weather": "Climate & Science",
+    "houston-daily-weather": "Climate & Science",
+    "phoenix-daily-weather": "Climate & Science",
+    # World / Politics
+    "china-invade": "World",
+    "us-election": "Politics",
+    "us-presidential": "Politics",
+}
+
 # Title-based fallback keywords when category is empty or unmapped.
 # Checked in order; first match wins.
 _TITLE_CATEGORY_KEYWORDS: list[tuple[str, list[str]]] = [
@@ -84,7 +149,9 @@ _TITLE_CATEGORY_KEYWORDS: list[tuple[str, list[str]]] = [
                   "prime minister", "impeach", "ballot", "vote", "legislation"]),
     ("Finance", ["fed ", "federal reserve", "interest rate", "inflation", "cpi",
                  "gdp", "jobs report", "unemployment", "s&p", "nasdaq", "dow jones",
-                 "earnings", "ipo", "stock", "recession"]),
+                 "earnings", "ipo", "stock", "recession", "equities", "close at $",
+                 "share price", "market cap", "quarterly",
+                 "aapl", "tsla", "nvda", "msft", "goog", "amzn", "beat earnings"]),
     ("Crypto", ["bitcoin", "btc", "ethereum", "eth", "solana", "sol", "crypto",
                 "defi", "nft", "memecoin", "doge", "token"]),
     ("Sports", ["nba", "nfl", "mlb", "nhl", "soccer", "premier league",
@@ -207,9 +274,16 @@ def normalize_category(raw_category: str, title: str = "") -> str:
     3. Default to "Other" if nothing matches.
     """
     if raw_category:
-        normalized = CATEGORY_MAP.get(raw_category.lower().strip())
+        key_lower = raw_category.lower().strip()
+        # Exact match first
+        normalized = CATEGORY_MAP.get(key_lower)
         if normalized:
             return normalized
+        # Prefix match for series slugs (e.g., "aapl-neg-risk-weekly" → Finance)
+        # Sort by descending key length so "nflx" matches before "nfl"
+        for prefix, cat in sorted(SERIES_PREFIX_MAP.items(), key=lambda x: -len(x[0])):
+            if key_lower.startswith(prefix):
+                return cat
 
     # Title-based fallback
     if title:

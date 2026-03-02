@@ -54,6 +54,11 @@ export function MarketCard({ market, showPlatform = true }: MarketCardProps) {
                 {market.category}
               </Badge>
             )}
+            {market.subcategory && (
+              <Badge variant="outline" className="text-xs">
+                {market.subcategory}
+              </Badge>
+            )}
           </div>
           <div className="flex items-center gap-3">
             <span className="font-mono">

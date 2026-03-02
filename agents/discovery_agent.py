@@ -98,7 +98,12 @@ class DiscoveryAgent(BaseAgent):
         )
 
         title = clean.get("question", clean.get("title", ""))
-        raw_category = clean.get("category", clean.get("groupItemTitle", ""))
+        # Category resolution: prefer API category, then seriesSlug, then groupItemTitle
+        raw_category = clean.get("category", "")
+        if not raw_category:
+            raw_category = sanitize_text(raw.get("seriesSlug", ""), max_length=100)
+        if not raw_category:
+            raw_category = clean.get("groupItemTitle", "")
         category = normalize_category(raw_category, title)
         subcategory = extract_subcategory(category, title)
 

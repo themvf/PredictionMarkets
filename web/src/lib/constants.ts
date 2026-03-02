@@ -45,11 +45,12 @@ export const CATEGORIES = [
   "Politics",
   "Sports",
   "Crypto",
-  "Culture",
-  "Weather",
-  "Economics",
-  "Tech",
   "Finance",
+  "Tech",
+  "Culture",
+  "World",
+  "Climate & Science",
+  "Other",
 ] as const;
 
 /** Default pagination size */

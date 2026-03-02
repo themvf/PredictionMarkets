@@ -18,13 +18,20 @@ interface PriceChartProps {
 }
 
 export function PriceChart({ data }: PriceChartProps) {
-  // Reverse so oldest is first (data comes DESC from DB)
-  const chartData = [...data].reverse().map((d) => ({
-    time: d.timestamp ?? "",
-    yes: d.yesPrice,
-    no: d.noPrice,
-    volume: d.volume,
-  }));
+  // Reverse so oldest is first (data comes DESC from DB), filter out blank timestamps
+  const chartData = [...data]
+    .reverse()
+    .filter((d) => d.timestamp)
+    .map((d) => ({
+      time: d.timestamp ?? "",
+      yes: d.yesPrice,
+      no: d.noPrice,
+      volume: d.volume,
+      bestBid: d.bestBid ?? undefined,
+      bestAsk: d.bestAsk ?? undefined,
+    }));
+
+  const hasBidAsk = chartData.some((d) => d.bestBid != null && d.bestAsk != null);
 
   return (
     <ResponsiveContainer width="100%" height={400}>
@@ -70,8 +77,22 @@ export function PriceChart({ data }: PriceChartProps) {
             borderRadius: "var(--radius)",
           }}
           labelStyle={{ color: "hsl(var(--popover-foreground))" }}
+          formatter={(value: unknown, name?: string) => {
+            if (name === "Bid" || name === "Bid-Ask Spread") {
+              return [`$${(value as number)?.toFixed(3)}`, name];
+            }
+            if (name === "Volume") {
+              const v = value as number;
+              if (v >= 1_000_000) return [`$${(v / 1_000_000).toFixed(1)}M`, name];
+              if (v >= 1_000) return [`$${(v / 1_000).toFixed(0)}K`, name];
+              return [`$${v}`, name];
+            }
+            return [`$${(value as number)?.toFixed(3)}`, name];
+          }}
         />
         <Legend />
+
+        {/* Volume as background area */}
         <Area
           yAxisId="vol"
           type="monotone"
@@ -81,6 +102,38 @@ export function PriceChart({ data }: PriceChartProps) {
           fillOpacity={0.15}
           name="Volume"
         />
+
+        {/* Bid-ask spread band: two stacked areas create a filled band between bid and ask */}
+        {hasBidAsk && (
+          <>
+            <Area
+              yAxisId="price"
+              type="monotone"
+              dataKey="bestBid"
+              stroke="none"
+              fill="transparent"
+              dot={false}
+              stackId="spread"
+              legendType="none"
+              name="Bid"
+            />
+            <Area
+              yAxisId="price"
+              type="monotone"
+              dataKey="bestAsk"
+              stroke="hsl(var(--chart-4))"
+              strokeWidth={0.5}
+              strokeDasharray="2 2"
+              fill="hsl(var(--chart-4))"
+              fillOpacity={0.12}
+              dot={false}
+              stackId="spread"
+              name="Bid-Ask Spread"
+            />
+          </>
+        )}
+
+        {/* Yes/No price lines */}
         <Line
           yAxisId="price"
           type="monotone"
