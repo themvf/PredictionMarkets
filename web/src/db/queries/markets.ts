@@ -7,6 +7,7 @@ export interface GetMarketsParams {
   platform?: string;
   status?: string;
   category?: string;
+  subcategory?: string;
   search?: string;
   sort?: string;
   page?: number;
@@ -17,6 +18,7 @@ export async function getMarkets(params: GetMarketsParams = {}) {
     platform,
     status = "active",
     category,
+    subcategory,
     search,
     sort = "volume_desc",
     page = 1,
@@ -32,6 +34,9 @@ export async function getMarkets(params: GetMarketsParams = {}) {
   }
   if (category && category !== "All" && category !== "all") {
     conditions.push(eq(markets.category, category));
+  }
+  if (subcategory && subcategory !== "all") {
+    conditions.push(eq(markets.subcategory, subcategory));
   }
   if (search) {
     conditions.push(ilike(markets.title, `%${search}%`));

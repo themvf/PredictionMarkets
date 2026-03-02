@@ -7,6 +7,7 @@ import {
   Store,
   GitCompare,
   LineChart,
+  DollarSign,
   Bell,
   Brain,
   Bot,
@@ -37,14 +38,15 @@ import { ThemeToggle } from "./theme-toggle";
 
 const PRIMARY_NAV = [
   { href: "/markets", label: "Markets", icon: Store },
+  { href: "/finance", label: "Finance", icon: DollarSign },
   { href: "/cross-platform", label: "Cross-Platform", icon: GitCompare },
   { href: "/charts", label: "Charts", icon: LineChart },
-  { href: "/alerts", label: "Alerts", icon: Bell },
   { href: "/whales", label: "Whales", icon: Waves },
   { href: "/traders", label: "Traders", icon: User },
 ] as const;
 
 const MORE_NAV = [
+  { href: "/alerts", label: "Alerts", icon: Bell },
   { href: "/insights", label: "AI Insights", icon: Brain },
   { href: "/agents", label: "Agents", icon: Bot },
   { href: "/leaderboard", label: "Leaderboard", icon: Trophy },
