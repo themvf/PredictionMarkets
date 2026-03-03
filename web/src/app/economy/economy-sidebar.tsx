@@ -4,12 +4,12 @@ import { usePathname, useSearchParams, useRouter } from "next/navigation";
 import { cn } from "@/lib/utils";
 import type { SubcategoryCount } from "@/db/queries/category-hub";
 
-interface FinanceSidebarProps {
+interface EconomySidebarProps {
   counts: SubcategoryCount[];
   totalMarkets: number;
 }
 
-export function FinanceSidebar({ counts, totalMarkets }: FinanceSidebarProps) {
+export function EconomySidebar({ counts, totalMarkets }: EconomySidebarProps) {
   const pathname = usePathname();
   const searchParams = useSearchParams();
   const router = useRouter();

@@ -1,6 +1,6 @@
 import { Suspense } from "react";
 import type { Metadata } from "next";
-import { DollarSign, Waves, TrendingUp, AlertTriangle } from "lucide-react";
+import { TrendingUp, Waves, BarChart3, AlertTriangle } from "lucide-react";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import {
@@ -25,12 +25,12 @@ import {
   type CategoryStats,
 } from "@/db/queries/category-hub";
 import { formatCompactCurrency, formatCurrency, formatRelativeTime } from "@/lib/utils";
-import { FinanceTabs } from "./finance-tabs";
-import { FinanceSidebar } from "./finance-sidebar";
-import { SharpMoneyCard } from "./sharp-money-card";
-import { AnomalyCard } from "./anomaly-card";
+import { EconomyTabs } from "./economy-tabs";
+import { EconomySidebar } from "./economy-sidebar";
+import { SharpMoneyCard } from "@/app/finance/sharp-money-card";
+import { AnomalyCard } from "@/app/finance/anomaly-card";
 
-export const metadata: Metadata = { title: "Finance Hub" };
+export const metadata: Metadata = { title: "Economy Hub" };
 export const dynamic = "force-dynamic";
 
 interface Props {
@@ -46,14 +46,14 @@ interface Props {
 function StatsHero({ stats }: { stats: CategoryStats }) {
   const cards = [
     {
-      label: "Finance Markets",
+      label: "Economy Markets",
       value: stats.totalMarkets.toLocaleString(),
-      icon: DollarSign,
+      icon: TrendingUp,
     },
     {
       label: "Total Volume",
       value: formatCompactCurrency(stats.totalVolume),
-      icon: TrendingUp,
+      icon: BarChart3,
     },
     {
       label: "Whale Trades",
@@ -83,7 +83,7 @@ function StatsHero({ stats }: { stats: CategoryStats }) {
 
 async function MarketsTab({ subcategory, page }: { subcategory?: string; page: number }) {
   const result = await getMarkets({
-    category: "Finance",
+    category: "Economy",
     subcategory: subcategory || undefined,
     sort: "volume_desc",
     page,
@@ -92,8 +92,8 @@ async function MarketsTab({ subcategory, page }: { subcategory?: string; page: n
   if (result.data.length === 0) {
     return (
       <EmptyState
-        icon={DollarSign}
-        title="No Finance markets"
+        icon={TrendingUp}
+        title="No Economy markets"
         description="No markets found for this subcategory."
       />
     );
@@ -119,14 +119,14 @@ async function MarketsTab({ subcategory, page }: { subcategory?: string; page: n
 // ── Whale Activity Tab ─────────────────────────────────────
 
 async function WhaleTab({ subcategory }: { subcategory?: string }) {
-  const trades = await getCategoryWhaleTrades("Finance", subcategory || undefined, 50);
+  const trades = await getCategoryWhaleTrades("Economy", subcategory || undefined, 50);
 
   if (trades.length === 0) {
     return (
       <EmptyState
         icon={Waves}
         title="No whale trades"
-        description="No whale trades found in Finance markets yet."
+        description="No whale trades found in Economy markets yet."
       />
     );
   }
@@ -177,7 +177,7 @@ async function WhaleTab({ subcategory }: { subcategory?: string }) {
                 ? formatRelativeTime(
                     new Date(trade.tradeTimestamp * 1000).toISOString()
                   )
-                : "—"}
+                : "\u2014"}
             </TableCell>
           </TableRow>
         ))}
@@ -190,24 +190,24 @@ async function WhaleTab({ subcategory }: { subcategory?: string }) {
 
 async function SharpMoneyTab() {
   const [topTraders, anomalies] = await Promise.all([
-    getCategoryTopTraders("Finance", 20),
-    getCategoryAnomalies("Finance", 10),
+    getCategoryTopTraders("Economy", 20),
+    getCategoryAnomalies("Economy", 10),
   ]);
 
   return (
     <div className="space-y-8">
       {/* Leaderboard */}
       <div className="space-y-3">
-        <h3 className="text-lg font-semibold">Finance Leaderboard</h3>
+        <h3 className="text-lg font-semibold">Economy Leaderboard</h3>
         {topTraders.length > 0 ? (
           topTraders.map((trader, i) => (
-            <SharpMoneyCard key={trader.id} trader={trader} rank={i + 1} />
+            <SharpMoneyCard key={trader.id} trader={trader} rank={i + 1} categoryLabel="Economy" />
           ))
         ) : (
           <EmptyState
             icon={TrendingUp}
             title="No trader data"
-            description="No whale traders found in Finance markets yet."
+            description="No whale traders found in Economy markets yet."
           />
         )}
       </div>
@@ -236,7 +236,7 @@ async function SharpMoneyTab() {
 
 // ── Main Content ───────────────────────────────────────────
 
-async function FinanceContent({ searchParams }: Props) {
+async function EconomyContent({ searchParams }: Props) {
   const params = await searchParams;
   const tab = params.tab || "markets";
   const subcategory = params.sub || "";
@@ -246,8 +246,8 @@ async function FinanceContent({ searchParams }: Props) {
   let stats: CategoryStats = { totalMarkets: 0, totalVolume: 0, whaleTradeCount: 0 };
   try {
     [subcategoryCounts, stats] = await Promise.all([
-      getCategorySubcategoryCounts("Finance"),
-      getCategoryStats("Finance"),
+      getCategorySubcategoryCounts("Economy"),
+      getCategoryStats("Economy"),
     ]);
   } catch {
     // Graceful degradation — sidebar and stats show zeros
@@ -256,12 +256,12 @@ async function FinanceContent({ searchParams }: Props) {
   return (
     <>
       <StatsHero stats={stats} />
-      <FinanceTabs />
+      <EconomyTabs />
 
       <div className="flex flex-col md:flex-row gap-6">
         {/* Sidebar */}
         <aside className="w-full md:w-48 shrink-0">
-          <FinanceSidebar
+          <EconomySidebar
             counts={subcategoryCounts}
             totalMarkets={stats.totalMarkets}
           />
@@ -282,13 +282,13 @@ async function FinanceContent({ searchParams }: Props) {
 
 // ── Page Shell ─────────────────────────────────────────────
 
-export default function FinancePage(props: Props) {
+export default function EconomyPage(props: Props) {
   return (
     <div className="space-y-6">
       <div>
-        <h1 className="text-3xl font-bold tracking-tight">Finance Hub</h1>
+        <h1 className="text-3xl font-bold tracking-tight">Economy Hub</h1>
         <p className="text-muted-foreground">
-          Equities, earnings, indices, macro markets, and smart money tracking
+          Trade policy, macro indicators, and economic data markets
         </p>
       </div>
 
@@ -312,7 +312,7 @@ export default function FinancePage(props: Props) {
           </div>
         }
       >
-        <FinanceContent searchParams={props.searchParams} />
+        <EconomyContent searchParams={props.searchParams} />
       </Suspense>
     </div>
   );

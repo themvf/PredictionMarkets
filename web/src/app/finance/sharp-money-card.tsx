@@ -1,14 +1,15 @@
 import Link from "next/link";
 import { Card, CardContent } from "@/components/ui/card";
 import { formatCompactCurrency } from "@/lib/utils";
-import type { FinanceTopTrader } from "@/db/queries/finance";
+import type { CategoryTopTrader } from "@/db/queries/category-hub";
 
 interface SharpMoneyCardProps {
-  trader: FinanceTopTrader;
+  trader: CategoryTopTrader;
   rank: number;
+  categoryLabel?: string;
 }
 
-export function SharpMoneyCard({ trader, rank }: SharpMoneyCardProps) {
+export function SharpMoneyCard({ trader, rank, categoryLabel = "Finance" }: SharpMoneyCardProps) {
   const name = trader.userName || trader.proxyWallet.slice(0, 12) + "...";
   const medal: Record<number, string> = { 1: "\u{1F947}", 2: "\u{1F948}", 3: "\u{1F949}" };
   const total = trader.buyVolume + trader.sellVolume;
@@ -34,7 +35,7 @@ export function SharpMoneyCard({ trader, rank }: SharpMoneyCardProps) {
             {trader.verifiedBadge === 1 && <span>✅</span>}
           </div>
           <p className="text-xs text-muted-foreground">
-            {trader.financeTradeCount} trades in Finance
+            {trader.tradeCount} trades in {categoryLabel}
           </p>
         </div>
 
@@ -56,12 +57,12 @@ export function SharpMoneyCard({ trader, rank }: SharpMoneyCardProps) {
           </div>
         </div>
 
-        {/* Finance volume */}
+        {/* Category volume */}
         <div className="text-right shrink-0">
           <div className="text-sm font-medium font-mono">
-            {formatCompactCurrency(trader.financeVolume)}
+            {formatCompactCurrency(trader.categoryVolume)}
           </div>
-          <div className="text-xs text-muted-foreground">Finance Vol</div>
+          <div className="text-xs text-muted-foreground">{categoryLabel} Vol</div>
         </div>
       </CardContent>
     </Card>

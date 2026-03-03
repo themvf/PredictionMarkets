@@ -1,24 +1,26 @@
 /**
- * Finance Hub queries — category-specific stats, whale trades,
- * sharp money leaderboard, and anomaly detection.
+ * Category Hub queries — generic stats, whale trades, sharp money
+ * leaderboard, and anomaly detection for any category.
  *
  * All queries JOIN whale_trades → markets via condition_id/platform_id
- * to filter by category = 'Finance'.
+ * and filter by the supplied category parameter.
  */
 
 import { db } from "@/db";
-import { markets, whaleTrades, traders } from "@/db/schema";
+import { markets } from "@/db/schema";
 import { eq, and, sql, desc } from "drizzle-orm";
 
 // ── Stats ──────────────────────────────────────────────────
 
-export interface FinanceStats {
+export interface CategoryStats {
   totalMarkets: number;
   totalVolume: number;
   whaleTradeCount: number;
 }
 
-export async function getFinanceStats(): Promise<FinanceStats> {
+export async function getCategoryStats(
+  category: string
+): Promise<CategoryStats> {
   const [marketStats, whaleCount] = await Promise.all([
     db
       .select({
@@ -26,7 +28,7 @@ export async function getFinanceStats(): Promise<FinanceStats> {
         totalVolume: sql<number>`coalesce(sum(${markets.volume}), 0)`,
       })
       .from(markets)
-      .where(and(eq(markets.category, "Finance"), eq(markets.status, "active"))),
+      .where(and(eq(markets.category, category), eq(markets.status, "active"))),
 
     db.execute(sql`
       SELECT count(*) as cnt
@@ -34,7 +36,7 @@ export async function getFinanceStats(): Promise<FinanceStats> {
       JOIN markets m
         ON wt.condition_id = m.platform_id
         AND m.platform = 'polymarket'
-      WHERE m.category = 'Finance'
+      WHERE m.category = ${category}
     `),
   ]);
 
@@ -54,9 +56,9 @@ export interface SubcategoryCount {
   count: number;
 }
 
-export async function getFinanceSubcategoryCounts(): Promise<
-  SubcategoryCount[]
-> {
+export async function getCategorySubcategoryCounts(
+  category: string
+): Promise<SubcategoryCount[]> {
   const rows = await db
     .select({
       subcategory: markets.subcategory,
@@ -65,7 +67,7 @@ export async function getFinanceSubcategoryCounts(): Promise<
     .from(markets)
     .where(
       and(
-        eq(markets.category, "Finance"),
+        eq(markets.category, category),
         eq(markets.status, "active"),
         sql`${markets.subcategory} IS NOT NULL AND ${markets.subcategory} != ''`
       )
@@ -79,9 +81,9 @@ export async function getFinanceSubcategoryCounts(): Promise<
   }));
 }
 
-// ── Whale Trades (Finance) ─────────────────────────────────
+// ── Whale Trades ─────────────────────────────────────────────
 
-export interface FinanceWhaleTrade {
+export interface CategoryWhaleTrade {
   id: number;
   traderId: number | null;
   userName: string | null;
@@ -101,10 +103,11 @@ export interface FinanceWhaleTrade {
   eventSlug: string | null;
 }
 
-export async function getFinanceWhaleTrades(
+export async function getCategoryWhaleTrades(
+  category: string,
   subcategory?: string,
   limit = 50
-): Promise<FinanceWhaleTrade[]> {
+): Promise<CategoryWhaleTrade[]> {
   const subFilter = subcategory
     ? sql`AND m.subcategory = ${subcategory}`
     : sql``;
@@ -120,7 +123,7 @@ export async function getFinanceWhaleTrades(
     JOIN markets m
       ON wt.condition_id = m.platform_id
       AND m.platform = 'polymarket'
-    WHERE m.category = 'Finance'
+    WHERE m.category = ${category}
       ${subFilter}
     ORDER BY wt.trade_timestamp DESC
     LIMIT ${limit}
@@ -149,27 +152,28 @@ export async function getFinanceWhaleTrades(
 
 // ── Top Traders (Sharp Money) ──────────────────────────────
 
-export interface FinanceTopTrader {
+export interface CategoryTopTrader {
   id: number;
   proxyWallet: string;
   userName: string | null;
   profileImage: string | null;
   verifiedBadge: number | null;
   totalPnl: number | null;
-  financeTradeCount: number;
-  financeVolume: number;
+  tradeCount: number;
+  categoryVolume: number;
   buyVolume: number;
   sellVolume: number;
 }
 
-export async function getFinanceTopTraders(
+export async function getCategoryTopTraders(
+  category: string,
   limit = 20
-): Promise<FinanceTopTrader[]> {
+): Promise<CategoryTopTrader[]> {
   const result = await db.execute(sql`
     SELECT t.id, t.proxy_wallet, t.user_name, t.profile_image,
            t.verified_badge, t.total_pnl,
-           count(wt.id)::int as finance_trade_count,
-           coalesce(sum(wt.usdc_size), 0) as finance_volume,
+           count(wt.id)::int as trade_count,
+           coalesce(sum(wt.usdc_size), 0) as category_volume,
            coalesce(sum(CASE WHEN wt.side = 'BUY' THEN wt.usdc_size ELSE 0 END), 0) as buy_volume,
            coalesce(sum(CASE WHEN wt.side = 'SELL' THEN wt.usdc_size ELSE 0 END), 0) as sell_volume
     FROM traders t
@@ -177,7 +181,7 @@ export async function getFinanceTopTraders(
     JOIN markets m
       ON wt.condition_id = m.platform_id
       AND m.platform = 'polymarket'
-    WHERE m.category = 'Finance'
+    WHERE m.category = ${category}
     GROUP BY t.id
     ORDER BY sum(wt.usdc_size) DESC
     LIMIT ${limit}
@@ -190,8 +194,8 @@ export async function getFinanceTopTraders(
     profileImage: r.profile_image as string | null,
     verifiedBadge: r.verified_badge != null ? Number(r.verified_badge) : null,
     totalPnl: r.total_pnl != null ? Number(r.total_pnl) : null,
-    financeTradeCount: Number(r.finance_trade_count ?? 0),
-    financeVolume: Number(r.finance_volume ?? 0),
+    tradeCount: Number(r.trade_count ?? 0),
+    categoryVolume: Number(r.category_volume ?? 0),
     buyVolume: Number(r.buy_volume ?? 0),
     sellVolume: Number(r.sell_volume ?? 0),
   }));
@@ -199,7 +203,7 @@ export async function getFinanceTopTraders(
 
 // ── Anomalies (large single trades) ────────────────────────
 
-export interface FinanceAnomaly {
+export interface CategoryAnomaly {
   id: number;
   traderId: number | null;
   userName: string | null;
@@ -214,9 +218,10 @@ export interface FinanceAnomaly {
   multiplier: number;
 }
 
-export async function getFinanceAnomalies(
+export async function getCategoryAnomalies(
+  category: string,
   limit = 10
-): Promise<FinanceAnomaly[]> {
+): Promise<CategoryAnomaly[]> {
   const result = await db.execute(sql`
     WITH avg_size AS (
       SELECT NULLIF(coalesce(avg(wt.usdc_size), 0), 0) as avg_trade
@@ -224,7 +229,7 @@ export async function getFinanceAnomalies(
       JOIN markets m
         ON wt.condition_id = m.platform_id
         AND m.platform = 'polymarket'
-      WHERE m.category = 'Finance'
+      WHERE m.category = ${category}
     )
     SELECT wt.id, wt.trader_id, wt.market_title, wt.side,
            wt.usdc_size, wt.price, wt.trade_timestamp,
@@ -237,7 +242,7 @@ export async function getFinanceAnomalies(
       AND m.platform = 'polymarket'
     LEFT JOIN traders t ON wt.trader_id = t.id
     CROSS JOIN avg_size a
-    WHERE m.category = 'Finance'
+    WHERE m.category = ${category}
       AND a.avg_trade IS NOT NULL
       AND wt.usdc_size >= a.avg_trade * 2
     ORDER BY wt.trade_timestamp DESC
@@ -246,7 +251,7 @@ export async function getFinanceAnomalies(
 
   return (result.rows as Record<string, unknown>[]).map((r) => {
     const usdcSize = Number(r.usdc_size ?? 0);
-    const avgTrade = Number(r.avg_trade ?? 1);
+    const avgTrade = Number(r.avg_trade ?? 0);
     return {
       id: Number(r.id),
       traderId: r.trader_id != null ? Number(r.trader_id) : null,

@@ -36,7 +36,7 @@ class TraderAgent(BaseAgent):
                 items_processed=0,
             )
 
-        categories = ["OVERALL", "POLITICS", "SPORTS", "CRYPTO", "ECONOMICS"]
+        categories = ["OVERALL", "POLITICS", "ECONOMICS", "FINANCE"]
         time_periods = ["ALL", "MONTH", "WEEK"]
         errors: List[str] = []
 

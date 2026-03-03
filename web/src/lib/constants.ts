@@ -43,9 +43,10 @@ export const SEVERITY_COLORS: Record<string, string> = {
 export const CATEGORIES = [
   "All",
   "Politics",
+  "Economy",
+  "Finance",
   "Sports",
   "Crypto",
-  "Finance",
   "Tech",
   "Culture",
   "World",

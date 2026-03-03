@@ -8,6 +8,7 @@ import {
   GitCompare,
   LineChart,
   DollarSign,
+  TrendingUp,
   Bell,
   Brain,
   Bot,
@@ -38,6 +39,7 @@ import { ThemeToggle } from "./theme-toggle";
 
 const PRIMARY_NAV = [
   { href: "/markets", label: "Markets", icon: Store },
+  { href: "/economy", label: "Economy", icon: TrendingUp },
   { href: "/finance", label: "Finance", icon: DollarSign },
   { href: "/cross-platform", label: "Cross-Platform", icon: GitCompare },
   { href: "/charts", label: "Charts", icon: LineChart },

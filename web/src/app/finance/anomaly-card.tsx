@@ -1,10 +1,10 @@
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { formatCurrency, formatRelativeTime } from "@/lib/utils";
-import type { FinanceAnomaly } from "@/db/queries/finance";
+import type { CategoryAnomaly } from "@/db/queries/category-hub";
 
 interface AnomalyCardProps {
-  anomaly: FinanceAnomaly;
+  anomaly: CategoryAnomaly;
 }
 
 export function AnomalyCard({ anomaly }: AnomalyCardProps) {

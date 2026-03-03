@@ -157,6 +157,19 @@ class MarketQueries:
             ).fetchall()
             return [dict(r) for r in rows]
 
+    def get_markets_by_categories(
+        self, platform: str, categories: List[str],
+    ) -> List[Dict[str, Any]]:
+        """Get active markets filtered to specific categories."""
+        with self.db._connect() as conn:
+            placeholders = ",".join("?" for _ in categories)
+            rows = conn.execute(
+                f"SELECT * FROM markets WHERE platform=? AND status='active' "
+                f"AND category IN ({placeholders}) ORDER BY volume DESC",
+                [platform] + categories,
+            ).fetchall()
+            return [dict(r) for r in rows]
+
     def search_markets(self, query: str) -> List[Dict[str, Any]]:
         with self.db._connect() as conn:
             rows = conn.execute(

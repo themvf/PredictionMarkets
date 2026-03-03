@@ -21,6 +21,9 @@ from db.models import NormalizedMarket, PriceSnapshot
 # Max parallel API requests per platform
 _MAX_WORKERS = 20
 
+# Only collect price snapshots for these categories to control costs.
+TARGET_CATEGORIES = ["Economy", "Finance", "Politics"]
+
 
 class CollectionAgent(BaseAgent):
     def __init__(self, config: Any = None) -> None:
@@ -35,7 +38,7 @@ class CollectionAgent(BaseAgent):
         errors: List[str] = []
 
         # ── Collect Kalshi prices (concurrent) ─────────────────
-        kalshi_markets = queries.get_markets_by_platform("kalshi")
+        kalshi_markets = queries.get_markets_by_categories("kalshi", TARGET_CATEGORIES)
         if kalshi_markets and kalshi_client:
             results = self._collect_batch(
                 kalshi_markets, self._collect_kalshi, kalshi_client, "Kalshi",
@@ -47,7 +50,7 @@ class CollectionAgent(BaseAgent):
                 snapshots_created += len(snapshots)
 
         # ── Collect Polymarket prices (concurrent) ─────────────
-        poly_markets = queries.get_markets_by_platform("polymarket")
+        poly_markets = queries.get_markets_by_categories("polymarket", TARGET_CATEGORIES)
         if poly_markets and polymarket_client:
             results = self._collect_batch(
                 poly_markets, self._collect_polymarket, polymarket_client, "Polymarket",
@@ -141,7 +144,9 @@ class CollectionAgent(BaseAgent):
             if yes_bids:
                 best_bid = yes_bids[0][0] / 100.0 if yes_bids[0][0] > 1 else yes_bids[0][0]
             no_asks = orderbook.get("no", [])
-            if best_bid and best_ask:
+            if no_asks:
+                best_ask = no_asks[0][0] / 100.0 if no_asks[0][0] > 1 else no_asks[0][0]
+            if best_bid is not None and best_ask is not None:
                 spread = best_ask - best_bid
         except Exception:
             pass
