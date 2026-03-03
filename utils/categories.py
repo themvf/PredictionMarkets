@@ -88,6 +88,7 @@ SERIES_PREFIX_MAP: dict[str, str] = {
     "serie-a": "Sports",
     "champions-league": "Sports",
     "europa-league": "Sports",
+    "europa-conference": "Sports",
     "nba": "Sports",
     "nfl": "Sports",
     "mlb": "Sports",
@@ -103,7 +104,9 @@ SERIES_PREFIX_MAP: dict[str, str] = {
     "copa-america": "Sports",
     "rugby": "Sports",
     "cricket": "Sports",
-    # Finance / Equities
+    "ncaa": "Sports",
+    "fifa": "Sports",
+    # Finance / Equities — stock tickers
     "aapl": "Finance",
     "tsla": "Finance",
     "msft": "Finance",
@@ -119,6 +122,75 @@ SERIES_PREFIX_MAP: dict[str, str] = {
     "dis-": "Finance",
     "bac-": "Finance",
     "jpm-": "Finance",
+    "pltr": "Finance",
+    "avgo": "Finance",
+    "crwd": "Finance",
+    "cost": "Finance",
+    "adbe": "Finance",
+    "tgt-": "Finance",
+    "anf-": "Finance",
+    "gtlb": "Finance",
+    "mrx-": "Finance",
+    "snap-": "Finance",
+    "uber-": "Finance",
+    "abnb": "Finance",
+    "shop": "Finance",
+    "roku": "Finance",
+    "sq-": "Finance",
+    "pypl": "Finance",
+    "intc": "Finance",
+    "amd-": "Finance",
+    "mu-": "Finance",
+    "arm-": "Finance",
+    "smci": "Finance",
+    # Finance / Equities — company names (seriesSlug uses full names)
+    "nvidia-": "Finance",
+    "palantir-": "Finance",
+    "broadcom-": "Finance",
+    "tesla-": "Finance",
+    "apple-": "Finance",
+    "microsoft-": "Finance",
+    "amazon-": "Finance",
+    "alphabet-": "Finance",
+    "crowdstrike-": "Finance",
+    "costco-": "Finance",
+    "adobe-": "Finance",
+    "target-": "Finance",
+    "netflix-": "Finance",
+    # Finance / Indices
+    "spx-": "Finance",
+    "ndx-": "Finance",
+    "djia-": "Finance",
+    "rut-": "Finance",
+    "nik-": "Finance",
+    "nya-": "Finance",
+    "vix-": "Finance",
+    "dxy-": "Finance",
+    # Finance / Commodities
+    "crude-oil": "Finance",
+    "natural-gas": "Finance",
+    "will-gold": "Finance",
+    "gold-gc": "Finance",
+    "gc-": "Finance",
+    "will-silver": "Finance",
+    "silver-si": "Finance",
+    "si-hit": "Finance",
+    "copper-": "Finance",
+    "wheat-": "Finance",
+    "corn-": "Finance",
+    # Finance / Forex
+    "eurusd": "Finance",
+    "usdjpy": "Finance",
+    "gbpusd": "Finance",
+    "usd-korean": "Finance",
+    "will-eurusd": "Finance",
+    "will-usdjpy": "Finance",
+    "will-gbpusd": "Finance",
+    # Finance / IPO & Other
+    "largest-company": "Finance",
+    "spacex-ipo": "Finance",
+    "anthropic-ipo": "Finance",
+    "ipos-before": "Finance",
     "earnings-": "Finance",
     # Crypto
     "bitcoin": "Crypto",
@@ -128,6 +200,9 @@ SERIES_PREFIX_MAP: dict[str, str] = {
     "xrp-": "Crypto",
     "dogecoin": "Crypto",
     "cardano": "Crypto",
+    "btc-": "Crypto",
+    "eth-": "Crypto",
+    "sol-": "Crypto",
     # Climate & Science
     "chicago-daily-weather": "Climate & Science",
     "nyc-daily-weather": "Climate & Science",
@@ -135,10 +210,27 @@ SERIES_PREFIX_MAP: dict[str, str] = {
     "miami-daily-weather": "Climate & Science",
     "houston-daily-weather": "Climate & Science",
     "phoenix-daily-weather": "Climate & Science",
+    # Culture
+    "elon-tweet": "Culture",
     # World / Politics
     "china-invade": "World",
     "us-election": "Politics",
     "us-presidential": "Politics",
+}
+
+# ── Series slug keyword → Clean display category ─────────────────
+# If a keyword appears ANYWHERE in the seriesSlug, map to this category.
+# Checked after prefix matching; first match wins.
+
+SERIES_KEYWORD_MAP: dict[str, str] = {
+    "-earnings": "Finance",
+    "multi-strikes": "Finance",
+    "neg-risk": "Finance",
+    "-ipo-": "Finance",
+    "quarterly-earnings": "Finance",
+    "hit-price": "Finance",
+    "above-on-": "Finance",
+    "largest-company": "Finance",
 }
 
 # Title-based fallback keywords when category is empty or unmapped.
@@ -220,24 +312,32 @@ SUBCATEGORY_KEYWORDS: dict[str, dict[str, list[str]]] = {
     },
     "Finance": {
         "Stocks": ["close at", "close above", "close below", "share price",
-                   "aapl", "tsla", "nvda", "msft", "goog", "amzn", "meta ",
-                   "nflx", "coin ", "dis ", "bac ", "jpm "],
-        "Earnings": ["earnings", "quarterly results", "revenue", "beat earnings",
-                     "miss earnings", "earnings call"],
-        "Indices": ["s&p", "spx", "nasdaq", "ndx", "dow jones", "djia",
-                    "russell", "vix"],
-        "Commodities": ["gold", "silver", "crude oil", "natural gas",
-                        "copper", "wheat", "corn"],
-        "Forex": ["usd/", "eur/", "gbp/", "jpy", "forex", "dollar index", "dxy"],
+                   "finish week", "finish month", "above $", "dip to $",
+                   "(aapl)", "(tsla)", "(nvda)", "(msft)", "(goog)", "(amzn)",
+                   "(meta)", "(nflx)", "(pltr)", "(avgo)", "(crwd)", "(cost)",
+                   "(adbe)", "(tgt)", "(anf)", "(gtlb)", "(snap)", "(uber)",
+                   "(abnb)", "(shop)", "(roku)", "(pypl)", "(intc)", "(amd)",
+                   "(smci)", "(arm)", "(mu)"],
+        "Earnings": ["beat earnings", "miss earnings", "beat quarterly",
+                     "quarterly earnings", "earnings call", "revenue estimate"],
+        "Indices": ["s&p 500", "(spx)", "nasdaq 100", "(ndx)", "dow jones",
+                    "(djia)", "russell 2000", "(rut)", "nikkei", "(nik)",
+                    "(nya)", "opens up or down", "up or down on"],
+        "Commodities": ["gold (gc)", "silver (si)", "crude oil (cl)",
+                        "natural gas (ng)", "copper", "wheat", "corn",
+                        "commodity", "commodities"],
+        "Forex": ["eur/usd", "usd/jpy", "gbp/usd", "exchange rate",
+                  "forex", "dollar index", "dxy", "korean won"],
         "Federal Reserve": ["fed ", "federal reserve", "fomc", "powell",
                            "interest rate", "rate cut", "rate hike"],
         "Inflation": ["inflation", "cpi", "consumer price", "pce"],
         "Jobs": ["jobs report", "unemployment", "nonfarm", "labor market",
                  "jobless claims"],
         "GDP": ["gdp", "economic growth", "recession"],
-        "IPO": ["ipo", "publicly trading", "direct listing", "spac"],
+        "IPO": ["ipo", "publicly trading", "direct listing", "spac",
+                "closing market cap"],
         "Acquisitions": ["acquisition", "merger", "takeover", "buyout"],
-        "Crypto ETF": ["etf", "bitcoin etf", "ethereum etf", "spot etf"],
+        "Crypto ETF": ["bitcoin etf", "ethereum etf", "spot etf"],
     },
     "Tech": {
         "AI": ["openai", "chatgpt", "gpt-5", "claude", "gemini", "llm",
@@ -294,6 +394,10 @@ def normalize_category(raw_category: str, title: str = "") -> str:
         # Sort by descending key length so "nflx" matches before "nfl"
         for prefix, cat in sorted(SERIES_PREFIX_MAP.items(), key=lambda x: -len(x[0])):
             if key_lower.startswith(prefix):
+                return cat
+        # Keyword-in-slug match (e.g., "avgo-earnings" contains "-earnings" → Finance)
+        for keyword, cat in SERIES_KEYWORD_MAP.items():
+            if keyword in key_lower:
                 return cat
 
     # Title-based fallback

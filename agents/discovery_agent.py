@@ -33,7 +33,7 @@ class DiscoveryAgent(BaseAgent):
         # ── Fetch Polymarket markets ─────────────────────────
         if polymarket_client:
             try:
-                raw_markets = polymarket_client.get_all_active_markets(max_pages=5)
+                raw_markets = polymarket_client.get_all_active_markets(max_pages=50)
                 normalized = [self._normalize_polymarket(m) for m in raw_markets]
                 poly_count = queries.upsert_markets_batch(normalized)
             except Exception as e:
