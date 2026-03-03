@@ -158,9 +158,10 @@ export interface CategoryTopTrader {
   userName: string | null;
   profileImage: string | null;
   verifiedBadge: number | null;
-  totalPnl: number | null;
+  totalPnl: number;
   tradeCount: number;
   categoryVolume: number;
+  avgTradeSize: number;
   buyVolume: number;
   sellVolume: number;
 }
@@ -174,6 +175,7 @@ export async function getCategoryTopTraders(
            t.verified_badge, t.total_pnl,
            count(wt.id)::int as trade_count,
            coalesce(sum(wt.usdc_size), 0) as category_volume,
+           coalesce(avg(wt.usdc_size), 0) as avg_trade_size,
            coalesce(sum(CASE WHEN wt.side = 'BUY' THEN wt.usdc_size ELSE 0 END), 0) as buy_volume,
            coalesce(sum(CASE WHEN wt.side = 'SELL' THEN wt.usdc_size ELSE 0 END), 0) as sell_volume
     FROM traders t
@@ -182,8 +184,10 @@ export async function getCategoryTopTraders(
       ON wt.condition_id = m.platform_id
       AND m.platform = 'polymarket'
     WHERE m.category = ${category}
+      AND t.total_pnl > 0
     GROUP BY t.id
-    ORDER BY sum(wt.usdc_size) DESC
+    HAVING count(wt.id) >= 3
+    ORDER BY t.total_pnl DESC
     LIMIT ${limit}
   `);
 
@@ -193,9 +197,10 @@ export async function getCategoryTopTraders(
     userName: r.user_name as string | null,
     profileImage: r.profile_image as string | null,
     verifiedBadge: r.verified_badge != null ? Number(r.verified_badge) : null,
-    totalPnl: r.total_pnl != null ? Number(r.total_pnl) : null,
+    totalPnl: Number(r.total_pnl ?? 0),
     tradeCount: Number(r.trade_count ?? 0),
     categoryVolume: Number(r.category_volume ?? 0),
+    avgTradeSize: Number(r.avg_trade_size ?? 0),
     buyVolume: Number(r.buy_volume ?? 0),
     sellVolume: Number(r.sell_volume ?? 0),
   }));

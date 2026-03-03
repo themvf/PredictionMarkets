@@ -23,7 +23,7 @@ export function SharpMoneyCard({ trader, rank, categoryLabel = "Finance" }: Shar
           {medal[rank] ?? `#${rank}`}
         </span>
 
-        {/* Name & stats */}
+        {/* Name & consistency */}
         <div className="flex-1 min-w-0">
           <div className="flex items-center gap-1">
             <Link
@@ -35,7 +35,7 @@ export function SharpMoneyCard({ trader, rank, categoryLabel = "Finance" }: Shar
             {trader.verifiedBadge === 1 && <span>✅</span>}
           </div>
           <p className="text-xs text-muted-foreground">
-            {trader.tradeCount} trades in {categoryLabel}
+            {trader.tradeCount} trades &middot; {formatCompactCurrency(trader.avgTradeSize)} avg
           </p>
         </div>
 
@@ -57,12 +57,12 @@ export function SharpMoneyCard({ trader, rank, categoryLabel = "Finance" }: Shar
           </div>
         </div>
 
-        {/* Category volume */}
+        {/* PnL — the primary metric */}
         <div className="text-right shrink-0">
-          <div className="text-sm font-medium font-mono">
-            {formatCompactCurrency(trader.categoryVolume)}
+          <div className="text-sm font-medium font-mono text-green-500">
+            +{formatCompactCurrency(trader.totalPnl)}
           </div>
-          <div className="text-xs text-muted-foreground">{categoryLabel} Vol</div>
+          <div className="text-xs text-muted-foreground">PnL</div>
         </div>
       </CardContent>
     </Card>
