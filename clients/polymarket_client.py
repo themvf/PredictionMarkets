@@ -108,6 +108,26 @@ class PolymarketClient:
         resp.raise_for_status()
         return resp.json()
 
+    def get_all_active_events(self, max_pages: int = 50,
+                               page_size: int = 100) -> List[Dict[str, Any]]:
+        """Paginate through all active Gamma events.
+
+        Returns events with embedded markets[] and tags[] arrays.
+        """
+        all_events: List[Dict[str, Any]] = []
+        for page in range(max_pages):
+            events = self.get_gamma_events(
+                limit=page_size,
+                offset=page * page_size,
+                active=True,
+            )
+            if not events:
+                break
+            all_events.extend(events)
+            if len(events) < page_size:
+                break
+        return all_events
+
     def get_gamma_market(self, condition_id: str) -> Dict[str, Any]:
         """Fetch a single market by condition ID from Gamma."""
         resp = self.session.get(

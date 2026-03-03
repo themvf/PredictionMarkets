@@ -402,6 +402,81 @@ SUBCATEGORY_KEYWORDS: dict[str, dict[str, list[str]]] = {
 }
 
 
+# ── Event tag → Clean display category ─────────────────────
+# Polymarket events carry a `tags` array with labels like "Finance",
+# "Earnings", "Economy".  This is the most reliable signal for modern
+# markets whose `category` field is empty.
+
+TAG_CATEGORY_MAP: dict[str, str] = {
+    "finance": "Finance",
+    "equities": "Finance",
+    "stocks": "Finance",
+    "earnings": "Finance",
+    "indices": "Finance",
+    "commodities": "Finance",
+    "forex": "Finance",
+    "ipos": "Finance",
+    "fed rates": "Finance",
+    "economy": "Economy",
+    "economics": "Economy",
+    "macro indicators": "Economy",
+    "politics": "Politics",
+    "elections": "Politics",
+    "us politics": "Politics",
+    "sports": "Sports",
+    "crypto": "Crypto",
+    "tech": "Tech",
+    "ai": "Tech",
+    "culture": "Culture",
+    "pop culture": "Culture",
+    "science": "Climate & Science",
+    "climate": "Climate & Science",
+    "weather": "Climate & Science",
+    "world": "World",
+    "business": "Finance",
+}
+
+# Tags that map directly to subcategories (used after category is determined)
+TAG_SUBCATEGORY_MAP: dict[str, str] = {
+    "earnings": "Earnings",
+    "equities": "Stocks",
+    "stocks": "Stocks",
+    "indices": "Indices",
+    "commodities": "Commodities",
+    "forex": "Forex",
+    "ipos": "IPOs",
+    "fed rates": "Fed Rates",
+    "macro indicators": "Macro Indicators",
+    "trade war": "Trade War",
+    "trump": "Trump",
+    "elections": "US Election",
+}
+
+
+def category_from_tags(tags: list[dict]) -> tuple[str, str]:
+    """Derive (category, subcategory) from a Polymarket event's tags array.
+
+    Each tag is a dict with at least a "label" key.
+    Returns ("", "") if no relevant tag is found.
+    """
+    category = ""
+    subcategory = ""
+    tag_labels = [t.get("label", "").lower().strip() for t in tags if t.get("label")]
+
+    # First pass: find the primary category
+    for label in tag_labels:
+        if label in TAG_CATEGORY_MAP and not category:
+            category = TAG_CATEGORY_MAP[label]
+
+    # Second pass: find the most specific subcategory
+    for label in tag_labels:
+        if label in TAG_SUBCATEGORY_MAP:
+            subcategory = TAG_SUBCATEGORY_MAP[label]
+            break  # first match wins (most specific tags tend to come first)
+
+    return category, subcategory
+
+
 def normalize_category(raw_category: str, title: str = "") -> str:
     """Map raw API category to a clean display category.
 

@@ -1,7 +1,13 @@
 """Market Discovery Agent.
 
-Scans Polymarket for active markets, normalizes them to a common schema
-(NormalizedMarket), and persists to the database using batch writes.
+Scans Polymarket for active events, normalizes each nested market to a
+common schema (NormalizedMarket), and persists to the database using
+batch writes.
+
+Uses the /events endpoint (not /markets) because modern Polymarket
+markets carry rich categorization via event-level **tags** arrays
+(e.g. ["Finance", "Equities", "Earnings"]) while the market-level
+`category` field is often empty.
 
 Uses batch database operations (single connection for all markets) to
 minimize round-trip overhead to Neon PostgreSQL.
@@ -17,7 +23,11 @@ from typing import Any, Dict, List
 from .base import AgentResult, AgentStatus, BaseAgent
 from db.models import NormalizedMarket
 from llm.sanitize import sanitize_text, sanitize_market_fields
-from utils.categories import normalize_category, extract_subcategory
+from utils.categories import (
+    normalize_category,
+    extract_subcategory,
+    category_from_tags,
+)
 
 
 class DiscoveryAgent(BaseAgent):
@@ -30,11 +40,13 @@ class DiscoveryAgent(BaseAgent):
 
         poly_count = 0
 
-        # ── Fetch Polymarket markets ─────────────────────────
+        # ── Fetch Polymarket events (with tags + nested markets) ──
         if polymarket_client:
             try:
-                raw_markets = polymarket_client.get_all_active_markets(max_pages=50)
-                normalized = [self._normalize_polymarket(m) for m in raw_markets]
+                raw_events = polymarket_client.get_all_active_events(max_pages=50)
+                normalized: List[NormalizedMarket] = []
+                for event in raw_events:
+                    normalized.extend(self._normalize_event(event))
                 poly_count = queries.upsert_markets_batch(normalized)
             except Exception as e:
                 context.setdefault("_errors", []).append(f"Polymarket discovery: {e}")
@@ -47,16 +59,76 @@ class DiscoveryAgent(BaseAgent):
             data={"poly_count": poly_count},
         )
 
-    def _normalize_polymarket(self, raw: Dict[str, Any]) -> NormalizedMarket:
-        """Convert Polymarket Gamma API response to NormalizedMarket.
+    def _normalize_event(self, event: Dict[str, Any]) -> List[NormalizedMarket]:
+        """Convert a Polymarket event (with nested markets) to NormalizedMarkets.
 
-        Sanitizes all text fields at the ingestion boundary — this is the
-        primary defense against prompt injection via Polymarket API data.
+        Category resolution priority:
+        1. Event-level tags (most reliable for modern markets)
+        2. Market-level category field
+        3. Event seriesSlug
+        4. Title keyword fallback
         """
-        # Sanitize raw API data before extracting fields
+        tags = event.get("tags", [])
+        tag_category, tag_subcategory = category_from_tags(tags)
+
+        event_slug = event.get("slug", "")
+        event_series = event.get("seriesSlug", "")
+
+        markets = event.get("markets", [])
+        # If the event has no nested markets, treat the event itself as a market
+        if not markets:
+            markets = [event]
+
+        results: List[NormalizedMarket] = []
+        for raw in markets:
+            nm = self._normalize_market(
+                raw, event, tag_category, tag_subcategory,
+                event_slug, event_series,
+            )
+            if nm:
+                results.append(nm)
+        return results
+
+    def _normalize_market(
+        self,
+        raw: Dict[str, Any],
+        event: Dict[str, Any],
+        tag_category: str,
+        tag_subcategory: str,
+        event_slug: str,
+        event_series: str,
+    ) -> NormalizedMarket | None:
+        """Convert a single Polymarket market (within an event) to NormalizedMarket."""
         clean = sanitize_market_fields(raw)
 
-        # Polymarket prices come as strings between "0" and "1"
+        condition_id = sanitize_text(
+            raw.get("conditionId", raw.get("id", "")), max_length=100,
+        )
+        if not condition_id:
+            return None
+
+        title = clean.get("question", clean.get("title", ""))
+
+        # ── Category resolution ──────────────────────────────
+        # Priority: tags > market category > seriesSlug > title keywords
+        if tag_category:
+            category = tag_category
+        else:
+            raw_category = clean.get("category", "")
+            if not raw_category:
+                raw_category = sanitize_text(event_series or "", max_length=100)
+            if not raw_category:
+                raw_category = clean.get("groupItemTitle", "")
+            category = normalize_category(raw_category, title)
+
+        # ── Subcategory resolution ───────────────────────────
+        # Priority: tag-derived subcategory > title keyword extraction
+        if tag_subcategory:
+            subcategory = tag_subcategory
+        else:
+            subcategory = extract_subcategory(category, title)
+
+        # ── Prices ───────────────────────────────────────────
         yes_price = None
         no_price = None
         outcomes_prices = raw.get("outcomePrices")
@@ -85,33 +157,13 @@ class DiscoveryAgent(BaseAgent):
         except (ValueError, TypeError):
             liquidity = 0.0
 
-        # Build token IDs from tokens array for CLOB lookups
-        tokens = raw.get("clobTokenIds")
-        if tokens and isinstance(tokens, str):
-            try:
-                tokens = json.loads(tokens)
-            except (json.JSONDecodeError, TypeError):
-                tokens = []
-
-        condition_id = sanitize_text(
-            raw.get("conditionId", raw.get("id", "")), max_length=100,
-        )
-
-        title = clean.get("question", clean.get("title", ""))
-        # Category resolution: prefer API category, then seriesSlug, then groupItemTitle
-        raw_category = clean.get("category", "")
-        if not raw_category:
-            raw_category = sanitize_text(raw.get("seriesSlug", ""), max_length=100)
-        if not raw_category:
-            raw_category = clean.get("groupItemTitle", "")
-        category = normalize_category(raw_category, title)
-        subcategory = extract_subcategory(category, title)
+        slug = raw.get("slug", event_slug)
 
         return NormalizedMarket(
             platform="polymarket",
             platform_id=condition_id,
             title=title,
-            description=clean.get("description", ""),
+            description=clean.get("description", event.get("description", "")),
             category=category,
             subcategory=subcategory,
             status="active" if raw.get("active") else "closed",
@@ -120,6 +172,6 @@ class DiscoveryAgent(BaseAgent):
             volume=volume,
             liquidity=liquidity,
             close_time=raw.get("endDate", raw.get("end_date_iso")),
-            url=f"https://polymarket.com/event/{raw.get('slug', condition_id)}",
+            url=f"https://polymarket.com/event/{slug}",
             raw_data=json.dumps(raw),
         )
