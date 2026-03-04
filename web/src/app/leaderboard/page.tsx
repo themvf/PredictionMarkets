@@ -209,8 +209,9 @@ export default function LeaderboardPage(props: Props) {
         <FilterSelect
           paramKey="category"
           label="Category"
+          defaultValue="all"
           options={[
-            { value: "", label: "All Categories" },
+            { value: "all", label: "All Categories" },
             { value: "Politics", label: "Politics" },
             { value: "Finance", label: "Finance" },
             { value: "Economy", label: "Economy" },
