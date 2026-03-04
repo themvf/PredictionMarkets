@@ -450,6 +450,22 @@ TAG_SUBCATEGORY_MAP: dict[str, str] = {
     "trade war": "Trade War",
     "trump": "Trump",
     "elections": "US Election",
+    "weekly": "Weekly",
+    "monthly": "Monthly",
+    "multi strikes": "Daily",
+}
+
+
+_TAG_PRIORITY: dict[str, int] = {
+    "Crypto": 10,
+    "Sports": 10,
+    "Politics": 8,
+    "Tech": 7,
+    "Culture": 6,
+    "Climate & Science": 6,
+    "World": 5,
+    "Economy": 4,
+    "Finance": 3,
 }
 
 
@@ -458,23 +474,32 @@ def category_from_tags(tags: list[dict]) -> tuple[str, str]:
 
     Each tag is a dict with at least a "label" key.
     Returns ("", "") if no relevant tag is found.
+
+    When an event carries multiple category tags (e.g. both "Crypto" and
+    "Finance" on MicroStrategy), we pick the highest-priority category.
+    Priority: Crypto/Sports > Politics > Tech > Economy > Finance.
     """
-    category = ""
-    subcategory = ""
     tag_labels = [t.get("label", "").lower().strip() for t in tags if t.get("label")]
 
-    # First pass: find the primary category
+    # Collect ALL matching categories with their priorities
+    best_category = ""
+    best_priority = -1
     for label in tag_labels:
-        if label in TAG_CATEGORY_MAP and not category:
-            category = TAG_CATEGORY_MAP[label]
+        cat = TAG_CATEGORY_MAP.get(label)
+        if cat:
+            pri = _TAG_PRIORITY.get(cat, 0)
+            if pri > best_priority:
+                best_priority = pri
+                best_category = cat
 
-    # Second pass: find the most specific subcategory
+    # Find the most specific subcategory
+    subcategory = ""
     for label in tag_labels:
         if label in TAG_SUBCATEGORY_MAP:
             subcategory = TAG_SUBCATEGORY_MAP[label]
-            break  # first match wins (most specific tags tend to come first)
+            break
 
-    return category, subcategory
+    return best_category, subcategory
 
 
 def normalize_category(raw_category: str, title: str = "") -> str:

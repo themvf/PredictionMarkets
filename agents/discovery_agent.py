@@ -18,6 +18,7 @@ Schedule: Every 30 minutes.
 from __future__ import annotations
 
 import json
+from datetime import datetime, timezone
 from typing import Any, Dict, List
 
 from .base import AgentResult, AgentStatus, BaseAgent
@@ -159,6 +160,19 @@ class DiscoveryAgent(BaseAgent):
 
         slug = raw.get("slug", event_slug)
 
+        # ── Status: check both API active flag and close time ──
+        close_time = raw.get("endDate", raw.get("end_date_iso"))
+        status = "active"
+        if not raw.get("active"):
+            status = "closed"
+        elif close_time:
+            try:
+                ct = datetime.fromisoformat(close_time.replace("Z", "+00:00"))
+                if ct < datetime.now(timezone.utc):
+                    status = "closed"
+            except (ValueError, TypeError):
+                pass
+
         return NormalizedMarket(
             platform="polymarket",
             platform_id=condition_id,
@@ -166,7 +180,7 @@ class DiscoveryAgent(BaseAgent):
             description=clean.get("description", event.get("description", "")),
             category=category,
             subcategory=subcategory,
-            status="active" if raw.get("active") else "closed",
+            status=status,
             yes_price=yes_price,
             no_price=no_price,
             volume=volume,

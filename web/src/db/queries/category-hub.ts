@@ -28,7 +28,11 @@ export async function getCategoryStats(
         totalVolume: sql<number>`coalesce(sum(${markets.volume}), 0)`,
       })
       .from(markets)
-      .where(and(eq(markets.category, category), eq(markets.status, "active"))),
+      .where(and(
+        eq(markets.category, category),
+        eq(markets.status, "active"),
+        sql`(${markets.closeTime} IS NULL OR ${markets.closeTime}::timestamptz > NOW())`
+      )),
 
     db.execute(sql`
       SELECT count(*) as cnt
@@ -69,7 +73,8 @@ export async function getCategorySubcategoryCounts(
       and(
         eq(markets.category, category),
         eq(markets.status, "active"),
-        sql`${markets.subcategory} IS NOT NULL AND ${markets.subcategory} != ''`
+        sql`${markets.subcategory} IS NOT NULL AND ${markets.subcategory} != ''`,
+        sql`(${markets.closeTime} IS NULL OR ${markets.closeTime}::timestamptz > NOW())`
       )
     )
     .groupBy(markets.subcategory)

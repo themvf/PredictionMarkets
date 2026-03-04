@@ -42,6 +42,11 @@ export async function getMarkets(params: GetMarketsParams = {}) {
     conditions.push(ilike(markets.title, `%${search}%`));
   }
 
+  // Exclude markets whose close time has passed
+  conditions.push(
+    sql`(${markets.closeTime} IS NULL OR ${markets.closeTime}::timestamptz > NOW())`
+  );
+
   const where = conditions.length > 0 ? and(...conditions) : undefined;
 
   // Determine sort order
@@ -106,7 +111,13 @@ export async function searchMarkets(query: string, limit = 20) {
   return db
     .select()
     .from(markets)
-    .where(and(ilike(markets.title, `%${query}%`), eq(markets.status, "active")))
+    .where(
+      and(
+        ilike(markets.title, `%${query}%`),
+        eq(markets.status, "active"),
+        sql`(${markets.closeTime} IS NULL OR ${markets.closeTime}::timestamptz > NOW())`
+      )
+    )
     .orderBy(desc(markets.volume))
     .limit(limit);
 }
@@ -126,7 +137,12 @@ export async function getFeaturedMarket() {
   const result = await db
     .select()
     .from(markets)
-    .where(eq(markets.status, "active"))
+    .where(
+      and(
+        eq(markets.status, "active"),
+        sql`(${markets.closeTime} IS NULL OR ${markets.closeTime}::timestamptz > NOW())`
+      )
+    )
     .orderBy(desc(markets.volume))
     .limit(1);
   return result[0] ?? null;
@@ -143,7 +159,8 @@ export async function getCategoriesWithCounts() {
     .where(
       and(
         eq(markets.status, "active"),
-        sql`${markets.category} IS NOT NULL AND ${markets.category} != ''`
+        sql`${markets.category} IS NOT NULL AND ${markets.category} != ''`,
+        sql`(${markets.closeTime} IS NULL OR ${markets.closeTime}::timestamptz > NOW())`
       )
     )
     .groupBy(markets.category)
