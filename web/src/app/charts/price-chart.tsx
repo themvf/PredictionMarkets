@@ -35,6 +35,16 @@ export function PriceChart({ data, yesColor, noColor }: PriceChartProps) {
 
   const hasBidAsk = chartData.some((d) => d.bestBid != null && d.bestAsk != null);
 
+  // Auto-scale Y axis to visible data range with padding
+  const allPrices = chartData.flatMap((d) =>
+    [d.yes, d.no].filter((v): v is number => v != null)
+  );
+  const dataMin = allPrices.length > 0 ? Math.min(...allPrices) : 0;
+  const dataMax = allPrices.length > 0 ? Math.max(...allPrices) : 1;
+  const padding = Math.max((dataMax - dataMin) * 0.1, 0.02);
+  const yMin = Math.max(0, Math.floor((dataMin - padding) * 100) / 100);
+  const yMax = Math.min(1, Math.ceil((dataMax + padding) * 100) / 100);
+
   return (
     <ResponsiveContainer width="100%" height={400}>
       <ComposedChart data={chartData}>
@@ -55,8 +65,8 @@ export function PriceChart({ data, yesColor, noColor }: PriceChartProps) {
         />
         <YAxis
           yAxisId="price"
-          domain={[0, 1]}
-          tickFormatter={(v: number) => `$${v.toFixed(2)}`}
+          domain={[yMin, yMax]}
+          tickFormatter={(v: number) => `${(v * 100).toFixed(0)}%`}
           className="text-xs"
         />
         <YAxis
@@ -81,7 +91,7 @@ export function PriceChart({ data, yesColor, noColor }: PriceChartProps) {
           labelStyle={{ color: "hsl(var(--popover-foreground))" }}
           formatter={(value: unknown, name?: string) => {
             if (name === "Bid" || name === "Bid-Ask Spread") {
-              return [`$${(value as number)?.toFixed(3)}`, name];
+              return [`${((value as number) * 100)?.toFixed(1)}%`, name];
             }
             if (name === "Volume") {
               const v = value as number;
@@ -89,7 +99,7 @@ export function PriceChart({ data, yesColor, noColor }: PriceChartProps) {
               if (v >= 1_000) return [`$${(v / 1_000).toFixed(0)}K`, name];
               return [`$${v}`, name];
             }
-            return [`$${(value as number)?.toFixed(3)}`, name];
+            return [`${((value as number) * 100)?.toFixed(1)}%`, name];
           }}
         />
         <Legend />
