@@ -25,6 +25,7 @@ import {
   type CategoryStats,
 } from "@/db/queries/category-hub";
 import { formatCompactCurrency, formatCurrency, formatRelativeTime } from "@/lib/utils";
+import { FilterSelect } from "@/components/shared/filter-bar";
 import { FinanceTabs } from "./finance-tabs";
 import { FinanceSidebar } from "./finance-sidebar";
 import { SharpMoneyCard } from "./sharp-money-card";
@@ -38,6 +39,7 @@ interface Props {
     sub?: string;
     tab?: string;
     page?: string;
+    sort?: string;
   }>;
 }
 
@@ -81,11 +83,11 @@ function StatsHero({ stats }: { stats: CategoryStats }) {
 
 // ── Markets Tab ────────────────────────────────────────────
 
-async function MarketsTab({ subcategory, page }: { subcategory?: string; page: number }) {
+async function MarketsTab({ subcategory, page, sort }: { subcategory?: string; page: number; sort?: string }) {
   const result = await getMarkets({
     category: "Finance",
     subcategory: subcategory || undefined,
-    sort: "volume_desc",
+    sort: sort || "volume_desc",
     page,
   });
 
@@ -101,6 +103,19 @@ async function MarketsTab({ subcategory, page }: { subcategory?: string; page: n
 
   return (
     <>
+      <div className="flex items-end gap-4 mb-4">
+        <FilterSelect
+          paramKey="sort"
+          label="Sort By"
+          defaultValue="volume_desc"
+          options={[
+            { value: "volume_desc", label: "Volume (High)" },
+            { value: "volume_asc", label: "Volume (Low)" },
+            { value: "close_time_asc", label: "Ending Soon" },
+            { value: "close_time_desc", label: "Newest" },
+          ]}
+        />
+      </div>
       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
         {result.data.map((market) => (
           <MarketCard key={market.id} market={market} />
@@ -270,7 +285,7 @@ async function FinanceContent({ searchParams }: Props) {
         {/* Tab content */}
         <div className="flex-1 min-w-0 space-y-6">
           {tab === "markets" && (
-            <MarketsTab subcategory={subcategory} page={page} />
+            <MarketsTab subcategory={subcategory} page={page} sort={params.sort} />
           )}
           {tab === "whales" && <WhaleTab subcategory={subcategory} />}
           {tab === "sharp" && <SharpMoneyTab />}

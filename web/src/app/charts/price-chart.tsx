@@ -15,9 +15,11 @@ import type { PriceSnapshot } from "@/db/schema";
 
 interface PriceChartProps {
   data: PriceSnapshot[];
+  yesColor?: string;
+  noColor?: string;
 }
 
-export function PriceChart({ data }: PriceChartProps) {
+export function PriceChart({ data, yesColor, noColor }: PriceChartProps) {
   // Reverse so oldest is first (data comes DESC from DB), filter out blank timestamps
   const chartData = [...data]
     .reverse()
@@ -138,7 +140,7 @@ export function PriceChart({ data }: PriceChartProps) {
           yAxisId="price"
           type="monotone"
           dataKey="yes"
-          stroke="hsl(var(--chart-1))"
+          stroke={yesColor ?? "hsl(var(--chart-1))"}
           strokeWidth={2}
           dot={false}
           name="Yes Price"
@@ -147,7 +149,7 @@ export function PriceChart({ data }: PriceChartProps) {
           yAxisId="price"
           type="monotone"
           dataKey="no"
-          stroke="hsl(var(--chart-2))"
+          stroke={noColor ?? "hsl(var(--chart-2))"}
           strokeWidth={2}
           dot={false}
           name="No Price"

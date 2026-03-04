@@ -1,3 +1,4 @@
+import { Suspense } from "react";
 import type { Metadata } from "next";
 import { notFound } from "next/navigation";
 import Link from "next/link";
@@ -5,13 +6,18 @@ import { ChevronLeft } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { Skeleton } from "@/components/ui/skeleton";
 import { getMarketById } from "@/db/queries/markets";
+import { getPriceHistoryWithRange } from "@/db/queries/price-snapshots";
+import { PriceChart } from "@/app/charts/price-chart";
+import { TimeRangeSelector } from "@/app/charts/time-range-selector";
 import { formatCurrency, formatPrice, formatRelativeTime } from "@/lib/utils";
 
 export const dynamic = "force-dynamic";
 
 interface Props {
   params: Promise<{ id: string }>;
+  searchParams: Promise<{ range?: string }>;
 }
 
 export async function generateMetadata({ params }: Props): Promise<Metadata> {
@@ -20,8 +26,47 @@ export async function generateMetadata({ params }: Props): Promise<Metadata> {
   return { title: market?.title ?? "Market Not Found" };
 }
 
-export default async function MarketDetailPage({ params }: Props) {
-  const { id } = await params;
+// ── Price Chart Section ──────────────────────────────────
+
+async function MarketPriceChart({
+  marketId,
+  searchParams,
+}: {
+  marketId: number;
+  searchParams: Promise<{ range?: string }>;
+}) {
+  const { range = "7d" } = await searchParams;
+  const history = await getPriceHistoryWithRange(marketId, range, 500);
+
+  return (
+    <Card>
+      <CardHeader>
+        <div className="flex items-center justify-between">
+          <CardTitle className="text-sm font-medium">Price History</CardTitle>
+          <TimeRangeSelector />
+        </div>
+      </CardHeader>
+      <CardContent>
+        {history.length > 0 ? (
+          <PriceChart
+            data={history}
+            yesColor="#3b82f6"
+            noColor="#ef4444"
+          />
+        ) : (
+          <p className="text-sm text-muted-foreground py-8 text-center">
+            No price history available for this time range.
+          </p>
+        )}
+      </CardContent>
+    </Card>
+  );
+}
+
+// ── Page ──────────────────────────────────────────────────
+
+export default async function MarketDetailPage(props: Props) {
+  const { id } = await props.params;
   const market = await getMarketById(parseInt(id));
 
   if (!market) {
@@ -113,6 +158,16 @@ export default async function MarketDetailPage({ params }: Props) {
           </CardContent>
         </Card>
       </div>
+
+      {/* Price Chart */}
+      <Suspense
+        fallback={<Skeleton className="h-[460px] w-full rounded-xl" />}
+      >
+        <MarketPriceChart
+          marketId={market.id}
+          searchParams={props.searchParams}
+        />
+      </Suspense>
 
       {/* Meta info */}
       <Card>

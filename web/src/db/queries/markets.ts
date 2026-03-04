@@ -67,6 +67,12 @@ export async function getMarkets(params: GetMarketsParams = {}) {
     case "yes_price_asc":
       orderBy = asc(markets.yesPrice);
       break;
+    case "close_time_asc":
+      orderBy = sql`CASE WHEN ${markets.closeTime} IS NULL OR ${markets.closeTime} = '' THEN 1 ELSE 0 END, ${markets.closeTime}::timestamptz ASC`;
+      break;
+    case "close_time_desc":
+      orderBy = sql`CASE WHEN ${markets.closeTime} IS NULL OR ${markets.closeTime} = '' THEN 1 ELSE 0 END, ${markets.closeTime}::timestamptz DESC`;
+      break;
     case "volume_desc":
     default:
       orderBy = desc(markets.volume);

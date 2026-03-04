@@ -5,7 +5,6 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import {
   Store,
-  GitCompare,
   LineChart,
   DollarSign,
   TrendingUp,
@@ -41,8 +40,6 @@ const PRIMARY_NAV = [
   { href: "/markets", label: "Markets", icon: Store },
   { href: "/economy", label: "Economy", icon: TrendingUp },
   { href: "/finance", label: "Finance", icon: DollarSign },
-  { href: "/cross-platform", label: "Cross-Platform", icon: GitCompare },
-  { href: "/charts", label: "Charts", icon: LineChart },
   { href: "/whales", label: "Whales", icon: Waves },
   { href: "/traders", label: "Traders", icon: User },
 ] as const;
