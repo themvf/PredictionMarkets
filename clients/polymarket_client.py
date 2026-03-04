@@ -93,13 +93,20 @@ class PolymarketClient:
 
     def get_gamma_events(self, limit: int = 100,
                          offset: int = 0,
-                         active: bool = True) -> List[Dict[str, Any]]:
-        """Fetch events from Gamma API."""
+                         active: bool = True,
+                         tag_slug: str | None = None) -> List[Dict[str, Any]]:
+        """Fetch events from Gamma API.
+
+        When ``tag_slug`` is provided the API returns full tag arrays;
+        unfiltered requests only include a generic "All" tag.
+        """
         params: Dict[str, Any] = {
             "limit": limit,
             "offset": offset,
             "active": str(active).lower(),
         }
+        if tag_slug:
+            params["tag_slug"] = tag_slug
         resp = self.session.get(
             f"{self.gamma_url}/events",
             params=params,
@@ -108,11 +115,36 @@ class PolymarketClient:
         resp.raise_for_status()
         return resp.json()
 
+    def get_events_by_tag(self, tag_slug: str,
+                          max_pages: int = 50,
+                          page_size: int = 100) -> List[Dict[str, Any]]:
+        """Paginate through active events for a specific tag.
+
+        Unlike the unfiltered endpoint, tag-filtered requests return
+        full tag arrays on each event, enabling accurate categorization.
+        """
+        all_events: List[Dict[str, Any]] = []
+        for page in range(max_pages):
+            events = self.get_gamma_events(
+                limit=page_size,
+                offset=page * page_size,
+                active=True,
+                tag_slug=tag_slug,
+            )
+            if not events:
+                break
+            all_events.extend(events)
+            if len(events) < page_size:
+                break
+        return all_events
+
     def get_all_active_events(self, max_pages: int = 50,
                                page_size: int = 100) -> List[Dict[str, Any]]:
         """Paginate through all active Gamma events.
 
         Returns events with embedded markets[] and tags[] arrays.
+        NOTE: The unfiltered endpoint only returns a generic "All" tag.
+        Use get_events_by_tag() for accurate tag data.
         """
         all_events: List[Dict[str, Any]] = []
         for page in range(max_pages):

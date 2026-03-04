@@ -31,6 +31,29 @@ from utils.categories import (
 )
 
 
+_TARGET_TAG_SLUGS = [
+    "finance",
+    "equities",
+    "stocks",
+    "earnings",
+    "indices",
+    "commodities",
+    "forex",
+    "ipos",
+    "fed-rates",
+    "economy",
+    "economics",
+    "macro-indicators",
+    "economic-policy",
+    "fed",
+    "politics",
+    "elections",
+    "us-politics",
+    "trade-war",
+    "trump",
+]
+
+
 class DiscoveryAgent(BaseAgent):
     def __init__(self, config: Any = None) -> None:
         super().__init__(name="discovery", config=config)
@@ -41,22 +64,40 @@ class DiscoveryAgent(BaseAgent):
 
         poly_count = 0
 
-        # ── Fetch Polymarket events (with tags + nested markets) ──
+        # ── Fetch Polymarket events per target tag ──────────────
+        # The unfiltered /events endpoint only returns a generic "All"
+        # tag.  Fetching per tag_slug returns full tag arrays, enabling
+        # accurate category + subcategory resolution.
         if polymarket_client:
+            seen_ids: set[str] = set()
+            normalized: List[NormalizedMarket] = []
+            for slug in _TARGET_TAG_SLUGS:
+                try:
+                    events = polymarket_client.get_events_by_tag(
+                        tag_slug=slug, max_pages=20,
+                    )
+                    for event in events:
+                        eid = event.get("id", "")
+                        if eid in seen_ids:
+                            continue
+                        seen_ids.add(eid)
+                        normalized.extend(self._normalize_event(event))
+                except Exception as e:
+                    context.setdefault("_errors", []).append(
+                        f"Polymarket tag={slug}: {e}"
+                    )
             try:
-                raw_events = polymarket_client.get_all_active_events(max_pages=50)
-                normalized: List[NormalizedMarket] = []
-                for event in raw_events:
-                    normalized.extend(self._normalize_event(event))
                 poly_count = queries.upsert_markets_batch(normalized)
             except Exception as e:
-                context.setdefault("_errors", []).append(f"Polymarket discovery: {e}")
+                context.setdefault("_errors", []).append(
+                    f"Polymarket batch upsert: {e}"
+                )
 
         return AgentResult(
             agent_name=self.name,
             status=AgentStatus.SUCCESS,
             items_processed=poly_count,
-            summary=f"Discovered {poly_count} Polymarket markets.",
+            summary=f"Discovered {poly_count} Polymarket markets from {len(seen_ids) if polymarket_client else 0} events.",
             data={"poly_count": poly_count},
         )
 
@@ -172,6 +213,10 @@ class DiscoveryAgent(BaseAgent):
                     status = "closed"
             except (ValueError, TypeError):
                 pass
+
+        # Skip closed markets entirely — no point writing to DB
+        if status == "closed":
+            return None
 
         return NormalizedMarket(
             platform="polymarket",
