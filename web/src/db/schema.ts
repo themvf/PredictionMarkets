@@ -163,6 +163,13 @@ export const traders = pgTable(
     portfolioValue: doublePrecision("portfolio_value"),
     firstSeen: text("first_seen").default(""),
     lastUpdated: text("last_updated").default(""),
+    winRate: doublePrecision("win_rate"),
+    totalTrades: integer("total_trades").default(0),
+    avgPositionSize: doublePrecision("avg_position_size"),
+    activePositions: integer("active_positions").default(0),
+    traderTier: text("trader_tier").default(""),
+    primaryCategory: text("primary_category").default(""),
+    tags: text("tags").default(""),
   },
   (t) => [index("idx_traders_wallet").on(t.proxyWallet)]
 );
@@ -235,6 +242,87 @@ export const traderWatchlist = pgTable("trader_watchlist", {
   createdAt: text("created_at").default(""),
 });
 
+// ── Trader Metrics (computed by ProfileAgent) ─────────────
+
+export const traderMetrics = pgTable(
+  "trader_metrics",
+  {
+    id: serial("id").primaryKey(),
+    traderId: integer("trader_id")
+      .notNull()
+      .references(() => traders.id)
+      .unique(),
+    proxyWallet: text("proxy_wallet").notNull(),
+    winRate: doublePrecision("win_rate"),
+    totalTrades: integer("total_trades").default(0),
+    avgTradeSize: doublePrecision("avg_trade_size"),
+    avgHoldTimeHours: doublePrecision("avg_hold_time_hours"),
+    largestWin: doublePrecision("largest_win"),
+    largestLoss: doublePrecision("largest_loss"),
+    sharpeRatio: doublePrecision("sharpe_ratio"),
+    consistencyScore: doublePrecision("consistency_score"),
+    convictionScore: doublePrecision("conviction_score"),
+    activeMarkets: integer("active_markets").default(0),
+    categoriesTraded: text("categories_traded").default(""),
+    primaryCategory: text("primary_category").default(""),
+    computedAt: text("computed_at").default(""),
+  },
+  (t) => [index("idx_trader_metrics_trader").on(t.traderId)]
+);
+
+// ── Trader Category P&L ──────────────────────────────────
+
+export const traderCategoryPnl = pgTable(
+  "trader_category_pnl",
+  {
+    id: serial("id").primaryKey(),
+    traderId: integer("trader_id")
+      .notNull()
+      .references(() => traders.id),
+    category: text("category").notNull(),
+    pnl: doublePrecision("pnl").default(0),
+    volume: doublePrecision("volume").default(0),
+    tradeCount: integer("trade_count").default(0),
+    winCount: integer("win_count").default(0),
+    computedAt: text("computed_at").default(""),
+  },
+  (t) => [
+    unique("trader_category_pnl_trader_id_category_key").on(
+      t.traderId,
+      t.category
+    ),
+    index("idx_trader_category_pnl_trader").on(t.traderId),
+  ]
+);
+
+// ── Trader Anomalies ─────────────────────────────────────
+
+export const traderAnomalies = pgTable(
+  "trader_anomalies",
+  {
+    id: serial("id").primaryKey(),
+    traderId: integer("trader_id")
+      .notNull()
+      .references(() => traders.id),
+    proxyWallet: text("proxy_wallet").notNull(),
+    anomalyType: text("anomaly_type").notNull(),
+    severity: text("severity").default("info"),
+    marketTitle: text("market_title").default(""),
+    description: text("description").default(""),
+    data: text("data").default(""),
+    detectedAt: text("detected_at").default(""),
+  },
+  (t) => [
+    unique("trader_anomalies_trader_type_market_key").on(
+      t.traderId,
+      t.anomalyType,
+      t.marketTitle
+    ),
+    index("idx_trader_anomalies_trader").on(t.traderId, t.detectedAt),
+    index("idx_trader_anomalies_type").on(t.anomalyType, t.severity),
+  ]
+);
+
 // ── Inferred Types ─────────────────────────────────────────
 
 export type Market = typeof markets.$inferSelect;
@@ -248,3 +336,6 @@ export type Trader = typeof traders.$inferSelect;
 export type WhaleTrade = typeof whaleTrades.$inferSelect;
 export type TraderPosition = typeof traderPositions.$inferSelect;
 export type TraderWatchlistEntry = typeof traderWatchlist.$inferSelect;
+export type TraderMetrics = typeof traderMetrics.$inferSelect;
+export type TraderCategoryPnl = typeof traderCategoryPnl.$inferSelect;
+export type TraderAnomaly = typeof traderAnomalies.$inferSelect;

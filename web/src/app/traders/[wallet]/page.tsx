@@ -1,12 +1,19 @@
-import { Suspense } from "react";
 import type { Metadata } from "next";
 import { notFound } from "next/navigation";
 import Link from "next/link";
-import { ChevronLeft, User, ExternalLink } from "lucide-react";
+import {
+  ChevronLeft,
+  ExternalLink,
+  AlertTriangle,
+  Target,
+  BarChart3,
+  Percent,
+  TrendingUp,
+  Activity,
+} from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { Skeleton } from "@/components/ui/skeleton";
 import {
   Table,
   TableBody,
@@ -19,10 +26,14 @@ import {
   getTraderByWallet,
   getLatestTraderPositions,
   getWatchlistIds,
+  getTraderMetrics,
+  getTraderCategoryPnl,
+  getTraderAnomalies,
 } from "@/db/queries/traders";
 import { getWhaleTradesByTrader } from "@/db/queries/whales";
-import { formatCurrency, formatPrice, formatPercent } from "@/lib/utils";
+import { formatCurrency, formatPrice, formatPercent, formatRelativeTime } from "@/lib/utils";
 import { WatchlistStar } from "../../watchlist/watchlist-star";
+import { CategoryPnlChart } from "./category-pnl-chart";
 
 export const dynamic = "force-dynamic";
 
@@ -38,6 +49,40 @@ export async function generateMetadata({ params }: Props): Promise<Metadata> {
   };
 }
 
+// ── Tier + Tag badges ────────────────────────────────────────
+
+const TIER_COLORS: Record<string, string> = {
+  whale: "bg-purple-500/15 text-purple-700 dark:text-purple-400 border-purple-500/30",
+  shark: "bg-blue-500/15 text-blue-700 dark:text-blue-400 border-blue-500/30",
+  dolphin: "bg-cyan-500/15 text-cyan-700 dark:text-cyan-400 border-cyan-500/30",
+  fish: "bg-gray-500/15 text-gray-700 dark:text-gray-400 border-gray-500/30",
+};
+
+function TierBadge({ tier }: { tier: string }) {
+  if (!tier) return null;
+  const label = tier.charAt(0).toUpperCase() + tier.slice(1);
+  return (
+    <Badge variant="outline" className={TIER_COLORS[tier] ?? ""}>
+      {label}
+    </Badge>
+  );
+}
+
+const TAG_LABELS: Record<string, string> = {
+  contrarian: "Contrarian",
+  category_specialist: "Category Specialist",
+  high_conviction: "High Conviction",
+  early_mover: "Early Mover",
+};
+
+const ANOMALY_SEVERITY: Record<string, string> = {
+  critical: "bg-red-500/15 text-red-700 dark:text-red-400 border-red-500/30",
+  warning: "bg-amber-500/15 text-amber-700 dark:text-amber-400 border-amber-500/30",
+  info: "bg-blue-500/15 text-blue-700 dark:text-blue-400 border-blue-500/30",
+};
+
+// ── Page ─────────────────────────────────────────────────────
+
 export default async function TraderProfilePage({ params }: Props) {
   const { wallet } = await params;
   const trader = await getTraderByWallet(wallet);
@@ -46,14 +91,19 @@ export default async function TraderProfilePage({ params }: Props) {
     notFound();
   }
 
-  const [positions, recentTrades, watchedIds] = await Promise.all([
-    getLatestTraderPositions(trader.id),
-    getWhaleTradesByTrader(trader.id, 20),
-    getWatchlistIds(),
-  ]);
+  const [positions, recentTrades, watchedIds, metrics, categoryPnl, anomalies] =
+    await Promise.all([
+      getLatestTraderPositions(trader.id),
+      getWhaleTradesByTrader(trader.id, 20),
+      getWatchlistIds(),
+      getTraderMetrics(trader.id),
+      getTraderCategoryPnl(trader.id),
+      getTraderAnomalies(trader.id, 10),
+    ]);
 
   const name = trader.userName || wallet.slice(0, 16) + "...";
   const watched = watchedIds.has(trader.id);
+  const tags = (trader.tags ?? "").split(",").filter(Boolean);
 
   return (
     <div className="space-y-6">
@@ -68,10 +118,23 @@ export default async function TraderProfilePage({ params }: Props) {
       {/* Header */}
       <div className="flex items-start justify-between gap-4">
         <div className="space-y-1">
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-2 flex-wrap">
             <h1 className="text-2xl font-bold">{name}</h1>
             {trader.verifiedBadge === 1 && <span>✅</span>}
+            <TierBadge tier={trader.traderTier ?? ""} />
             <WatchlistStar traderId={trader.id} watched={watched} />
+          </div>
+          <div className="flex items-center gap-2 flex-wrap">
+            {trader.primaryCategory && (
+              <Badge variant="secondary" className="text-xs">
+                {trader.primaryCategory}
+              </Badge>
+            )}
+            {tags.map((tag) => (
+              <Badge key={tag} variant="outline" className="text-xs">
+                {TAG_LABELS[tag] ?? tag}
+              </Badge>
+            ))}
           </div>
           {trader.xUsername && (
             <a
@@ -87,7 +150,7 @@ export default async function TraderProfilePage({ params }: Props) {
         </div>
       </div>
 
-      {/* Stats */}
+      {/* Primary Stats */}
       <div className="grid gap-4 sm:grid-cols-3">
         <Card>
           <CardHeader className="pb-2">
@@ -128,6 +191,125 @@ export default async function TraderProfilePage({ params }: Props) {
           </CardContent>
         </Card>
       </div>
+
+      {/* Metrics Grid */}
+      {metrics && (
+        <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+          <Card>
+            <CardContent className="flex items-center gap-3 py-4">
+              <Percent className="h-6 w-6 text-primary/60" />
+              <div>
+                <p className="text-lg font-bold">
+                  {metrics.winRate != null
+                    ? `${(metrics.winRate * 100).toFixed(1)}%`
+                    : "—"}
+                </p>
+                <p className="text-xs text-muted-foreground">Win Rate</p>
+              </div>
+            </CardContent>
+          </Card>
+          <Card>
+            <CardContent className="flex items-center gap-3 py-4">
+              <BarChart3 className="h-6 w-6 text-primary/60" />
+              <div>
+                <p className="text-lg font-bold">
+                  {metrics.totalTrades?.toLocaleString() ?? "—"}
+                </p>
+                <p className="text-xs text-muted-foreground">Total Trades</p>
+              </div>
+            </CardContent>
+          </Card>
+          <Card>
+            <CardContent className="flex items-center gap-3 py-4">
+              <Target className="h-6 w-6 text-primary/60" />
+              <div>
+                <p className="text-lg font-bold">
+                  {metrics.avgTradeSize != null
+                    ? formatCurrency(metrics.avgTradeSize, 0)
+                    : "—"}
+                </p>
+                <p className="text-xs text-muted-foreground">Avg Trade Size</p>
+              </div>
+            </CardContent>
+          </Card>
+          <Card>
+            <CardContent className="flex items-center gap-3 py-4">
+              <Activity className="h-6 w-6 text-primary/60" />
+              <div>
+                <p className="text-lg font-bold">
+                  {metrics.consistencyScore != null
+                    ? `${(metrics.consistencyScore * 100).toFixed(0)}%`
+                    : "—"}
+                </p>
+                <p className="text-xs text-muted-foreground">Consistency</p>
+              </div>
+            </CardContent>
+          </Card>
+        </div>
+      )}
+
+      {/* Category P&L Chart */}
+      {categoryPnl.length > 0 && (
+        <Card>
+          <CardHeader>
+            <CardTitle className="text-sm font-medium">
+              Category P&L Breakdown
+            </CardTitle>
+          </CardHeader>
+          <CardContent>
+            <CategoryPnlChart data={categoryPnl} />
+          </CardContent>
+        </Card>
+      )}
+
+      {/* Anomalies */}
+      {anomalies.length > 0 && (
+        <Card>
+          <CardHeader>
+            <div className="flex items-center gap-2">
+              <AlertTriangle className="h-4 w-4 text-amber-500" />
+              <CardTitle className="text-sm font-medium">
+                Detected Anomalies
+              </CardTitle>
+            </div>
+          </CardHeader>
+          <CardContent>
+            <div className="space-y-3">
+              {anomalies.map((a) => (
+                <div
+                  key={a.id}
+                  className="flex items-start justify-between gap-3 text-sm"
+                >
+                  <div className="flex items-start gap-2 min-w-0">
+                    <Badge
+                      variant="outline"
+                      className={`text-xs shrink-0 ${ANOMALY_SEVERITY[a.severity ?? "info"] ?? ""}`}
+                    >
+                      {a.severity}
+                    </Badge>
+                    <div className="min-w-0">
+                      <p className="font-medium">
+                        {(a.anomalyType ?? "").replace(/_/g, " ")}
+                      </p>
+                      <p className="text-muted-foreground truncate">
+                        {a.description}
+                      </p>
+                      {a.marketTitle && (
+                        <p className="text-xs text-muted-foreground truncate">
+                          {a.marketTitle}
+                        </p>
+                      )}
+                    </div>
+                  </div>
+                  <span className="text-xs text-muted-foreground shrink-0">
+                    {a.detectedAt ? formatRelativeTime(a.detectedAt) : "—"}
+                  </span>
+                </div>
+              ))}
+            </div>
+          </CardContent>
+        </Card>
+      )}
 
       {/* Positions */}
       <Card>

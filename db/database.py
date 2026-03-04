@@ -302,6 +302,53 @@ class DatabaseManager:
                     UNIQUE(trader_id)
                 );
 
+                -- Trader metrics (computed by ProfileAgent)
+                CREATE TABLE IF NOT EXISTS trader_metrics (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    trader_id INTEGER UNIQUE NOT NULL REFERENCES traders(id),
+                    proxy_wallet TEXT NOT NULL,
+                    win_rate REAL,
+                    total_trades INTEGER DEFAULT 0,
+                    avg_trade_size REAL,
+                    avg_hold_time_hours REAL,
+                    largest_win REAL,
+                    largest_loss REAL,
+                    sharpe_ratio REAL,
+                    consistency_score REAL,
+                    conviction_score REAL,
+                    active_markets INTEGER DEFAULT 0,
+                    categories_traded TEXT DEFAULT '',
+                    primary_category TEXT DEFAULT '',
+                    computed_at TEXT DEFAULT (datetime('now'))
+                );
+
+                -- Per-category P&L breakdown
+                CREATE TABLE IF NOT EXISTS trader_category_pnl (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    trader_id INTEGER NOT NULL REFERENCES traders(id),
+                    category TEXT NOT NULL,
+                    pnl REAL DEFAULT 0,
+                    volume REAL DEFAULT 0,
+                    trade_count INTEGER DEFAULT 0,
+                    win_count INTEGER DEFAULT 0,
+                    computed_at TEXT DEFAULT (datetime('now')),
+                    UNIQUE(trader_id, category)
+                );
+
+                -- Detected anomalies
+                CREATE TABLE IF NOT EXISTS trader_anomalies (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    trader_id INTEGER NOT NULL REFERENCES traders(id),
+                    proxy_wallet TEXT NOT NULL,
+                    anomaly_type TEXT NOT NULL,
+                    severity TEXT DEFAULT 'info',
+                    market_title TEXT DEFAULT '',
+                    description TEXT DEFAULT '',
+                    data TEXT DEFAULT '',
+                    detected_at TEXT DEFAULT (datetime('now')),
+                    UNIQUE(trader_id, anomaly_type, market_title)
+                );
+
                 -- Performance indexes
                 CREATE INDEX IF NOT EXISTS idx_price_snapshots_market_time
                     ON price_snapshots(market_id, timestamp);
@@ -323,13 +370,32 @@ class DatabaseManager:
                     ON trader_positions(trader_id, snapshot_time);
                 CREATE INDEX IF NOT EXISTS idx_markets_category_sub
                     ON markets(category, subcategory);
+                CREATE INDEX IF NOT EXISTS idx_trader_metrics_trader
+                    ON trader_metrics(trader_id);
+                CREATE INDEX IF NOT EXISTS idx_trader_category_pnl_trader
+                    ON trader_category_pnl(trader_id);
+                CREATE INDEX IF NOT EXISTS idx_trader_anomalies_trader
+                    ON trader_anomalies(trader_id, detected_at);
+                CREATE INDEX IF NOT EXISTS idx_trader_anomalies_type
+                    ON trader_anomalies(anomaly_type, severity);
             """)
 
-            # Migration: add subcategory column to existing databases
-            try:
-                conn.execute("ALTER TABLE markets ADD COLUMN subcategory TEXT DEFAULT ''")
-            except Exception:
-                pass  # Column already exists
+            # Migrations: add columns to existing databases
+            _migrations = [
+                "ALTER TABLE markets ADD COLUMN subcategory TEXT DEFAULT ''",
+                "ALTER TABLE traders ADD COLUMN win_rate REAL",
+                "ALTER TABLE traders ADD COLUMN total_trades INTEGER DEFAULT 0",
+                "ALTER TABLE traders ADD COLUMN avg_position_size REAL",
+                "ALTER TABLE traders ADD COLUMN active_positions INTEGER DEFAULT 0",
+                "ALTER TABLE traders ADD COLUMN trader_tier TEXT DEFAULT ''",
+                "ALTER TABLE traders ADD COLUMN primary_category TEXT DEFAULT ''",
+                "ALTER TABLE traders ADD COLUMN tags TEXT DEFAULT ''",
+            ]
+            for sql in _migrations:
+                try:
+                    conn.execute(sql)
+                except Exception:
+                    pass  # Column already exists
 
     def _ensure_schema_postgres(self) -> None:
         with self._connect() as conn:
@@ -510,6 +576,57 @@ class DatabaseManager:
                 )
             """)
 
+            # Trader metrics (computed by ProfileAgent)
+            conn.execute("""
+                CREATE TABLE IF NOT EXISTS trader_metrics (
+                    id SERIAL PRIMARY KEY,
+                    trader_id INTEGER UNIQUE NOT NULL REFERENCES traders(id),
+                    proxy_wallet TEXT NOT NULL,
+                    win_rate DOUBLE PRECISION,
+                    total_trades INTEGER DEFAULT 0,
+                    avg_trade_size DOUBLE PRECISION,
+                    avg_hold_time_hours DOUBLE PRECISION,
+                    largest_win DOUBLE PRECISION,
+                    largest_loss DOUBLE PRECISION,
+                    sharpe_ratio DOUBLE PRECISION,
+                    consistency_score DOUBLE PRECISION,
+                    conviction_score DOUBLE PRECISION,
+                    active_markets INTEGER DEFAULT 0,
+                    categories_traded TEXT DEFAULT '',
+                    primary_category TEXT DEFAULT '',
+                    computed_at TEXT DEFAULT ''
+                )
+            """)
+
+            conn.execute("""
+                CREATE TABLE IF NOT EXISTS trader_category_pnl (
+                    id SERIAL PRIMARY KEY,
+                    trader_id INTEGER NOT NULL REFERENCES traders(id),
+                    category TEXT NOT NULL,
+                    pnl DOUBLE PRECISION DEFAULT 0,
+                    volume DOUBLE PRECISION DEFAULT 0,
+                    trade_count INTEGER DEFAULT 0,
+                    win_count INTEGER DEFAULT 0,
+                    computed_at TEXT DEFAULT '',
+                    UNIQUE(trader_id, category)
+                )
+            """)
+
+            conn.execute("""
+                CREATE TABLE IF NOT EXISTS trader_anomalies (
+                    id SERIAL PRIMARY KEY,
+                    trader_id INTEGER NOT NULL REFERENCES traders(id),
+                    proxy_wallet TEXT NOT NULL,
+                    anomaly_type TEXT NOT NULL,
+                    severity TEXT DEFAULT 'info',
+                    market_title TEXT DEFAULT '',
+                    description TEXT DEFAULT '',
+                    data TEXT DEFAULT '',
+                    detected_at TEXT DEFAULT '',
+                    UNIQUE(trader_id, anomaly_type, market_title)
+                )
+            """)
+
             # Indexes
             conn.execute("CREATE INDEX IF NOT EXISTS idx_price_snapshots_market_time ON price_snapshots(market_id, timestamp)")
             conn.execute("CREATE INDEX IF NOT EXISTS idx_markets_platform_status ON markets(platform, status)")
@@ -521,3 +638,20 @@ class DatabaseManager:
             conn.execute("CREATE INDEX IF NOT EXISTS idx_whale_trades_size ON whale_trades(usdc_size)")
             conn.execute("CREATE INDEX IF NOT EXISTS idx_trader_positions_trader ON trader_positions(trader_id, snapshot_time)")
             conn.execute("CREATE INDEX IF NOT EXISTS idx_markets_category_sub ON markets(category, subcategory)")
+            conn.execute("CREATE INDEX IF NOT EXISTS idx_trader_metrics_trader ON trader_metrics(trader_id)")
+            conn.execute("CREATE INDEX IF NOT EXISTS idx_trader_category_pnl_trader ON trader_category_pnl(trader_id)")
+            conn.execute("CREATE INDEX IF NOT EXISTS idx_trader_anomalies_trader ON trader_anomalies(trader_id, detected_at)")
+            conn.execute("CREATE INDEX IF NOT EXISTS idx_trader_anomalies_type ON trader_anomalies(anomaly_type, severity)")
+
+            # Migrations: add new columns to existing traders table
+            _pg_migrations = [
+                "ALTER TABLE traders ADD COLUMN IF NOT EXISTS win_rate DOUBLE PRECISION",
+                "ALTER TABLE traders ADD COLUMN IF NOT EXISTS total_trades INTEGER DEFAULT 0",
+                "ALTER TABLE traders ADD COLUMN IF NOT EXISTS avg_position_size DOUBLE PRECISION",
+                "ALTER TABLE traders ADD COLUMN IF NOT EXISTS active_positions INTEGER DEFAULT 0",
+                "ALTER TABLE traders ADD COLUMN IF NOT EXISTS trader_tier TEXT DEFAULT ''",
+                "ALTER TABLE traders ADD COLUMN IF NOT EXISTS primary_category TEXT DEFAULT ''",
+                "ALTER TABLE traders ADD COLUMN IF NOT EXISTS tags TEXT DEFAULT ''",
+            ]
+            for sql in _pg_migrations:
+                conn.execute(sql)

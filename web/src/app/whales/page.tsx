@@ -1,7 +1,8 @@
 import { Suspense } from "react";
 import type { Metadata } from "next";
 import Link from "next/link";
-import { Waves } from "lucide-react";
+import { Waves, AlertTriangle } from "lucide-react";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import {
   Table,
   TableBody,
@@ -15,6 +16,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { FilterSelect } from "@/components/shared/filter-bar";
 import { EmptyState } from "@/components/shared/empty-state";
 import { getWhaleTrades } from "@/db/queries/whales";
+import { getRecentAnomalies } from "@/db/queries/traders";
 import { formatCurrency, formatRelativeTime } from "@/lib/utils";
 
 export const metadata: Metadata = { title: "Whale Tracker" };
@@ -100,6 +102,71 @@ async function WhaleContent({ searchParams }: Props) {
   );
 }
 
+// ── Anomaly Feed ─────────────────────────────────────────
+
+const ANOMALY_SEVERITY: Record<string, string> = {
+  critical: "bg-red-500/15 text-red-700 dark:text-red-400 border-red-500/30",
+  warning: "bg-amber-500/15 text-amber-700 dark:text-amber-400 border-amber-500/30",
+  info: "bg-blue-500/15 text-blue-700 dark:text-blue-400 border-blue-500/30",
+};
+
+async function AnomalyFeed() {
+  const anomalies = await getRecentAnomalies(20);
+
+  if (anomalies.length === 0) return null;
+
+  return (
+    <Card>
+      <CardHeader>
+        <div className="flex items-center gap-2">
+          <AlertTriangle className="h-4 w-4 text-amber-500" />
+          <CardTitle className="text-sm font-medium">
+            Unusual Activity
+          </CardTitle>
+        </div>
+      </CardHeader>
+      <CardContent>
+        <div className="space-y-3">
+          {anomalies.map((a) => (
+            <div
+              key={a.id}
+              className="flex items-start justify-between gap-3 text-sm"
+            >
+              <div className="flex items-start gap-2 min-w-0">
+                <Badge
+                  variant="outline"
+                  className={`text-xs shrink-0 ${ANOMALY_SEVERITY[a.severity ?? "info"] ?? ""}`}
+                >
+                  {a.severity}
+                </Badge>
+                <div className="min-w-0">
+                  <div className="flex items-center gap-1">
+                    <Link
+                      href={`/traders/${a.proxyWallet}`}
+                      className="font-medium hover:underline"
+                    >
+                      {a.userName || a.proxyWallet.slice(0, 10) + "..."}
+                    </Link>
+                    {a.verifiedBadge === 1 && <span className="text-xs">✅</span>}
+                  </div>
+                  <p className="text-muted-foreground truncate">
+                    {a.description}
+                  </p>
+                </div>
+              </div>
+              <span className="text-xs text-muted-foreground shrink-0">
+                {a.detectedAt ? formatRelativeTime(a.detectedAt) : "—"}
+              </span>
+            </div>
+          ))}
+        </div>
+      </CardContent>
+    </Card>
+  );
+}
+
+// ── Page Shell ───────────────────────────────────────────
+
 export default function WhalesPage(props: Props) {
   return (
     <div className="space-y-6">
@@ -109,6 +176,11 @@ export default function WhalesPage(props: Props) {
           Large trades from top Polymarket traders
         </p>
       </div>
+
+      {/* Anomaly Feed */}
+      <Suspense fallback={null}>
+        <AnomalyFeed />
+      </Suspense>
 
       <div className="flex flex-wrap items-end gap-4">
         <FilterSelect

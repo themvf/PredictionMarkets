@@ -1,5 +1,5 @@
 import { db } from "@/db";
-import { whaleTrades, traders, markets } from "@/db/schema";
+import { whaleTrades, traders, traderPositions, markets } from "@/db/schema";
 import { eq, desc, gte, and, sql, SQL } from "drizzle-orm";
 
 export interface GetWhaleTradesParams {
@@ -111,4 +111,43 @@ export async function getFirstTimeTrades(
   );
 
   return result.rows;
+}
+
+// ── Market Holders ────────────────────────────
+
+export async function getMarketHolders(conditionId: string, limit = 20) {
+  // Get the latest snapshot time for positions on this market
+  const snapshotResult = await db
+    .select({ t: sql<string>`MAX(${traderPositions.snapshotTime})` })
+    .from(traderPositions)
+    .where(eq(traderPositions.conditionId, conditionId));
+
+  const latestTime = snapshotResult[0]?.t;
+  if (!latestTime) return [];
+
+  return db
+    .select({
+      id: traderPositions.id,
+      traderId: traderPositions.traderId,
+      proxyWallet: traderPositions.proxyWallet,
+      outcome: traderPositions.outcome,
+      size: traderPositions.size,
+      avgPrice: traderPositions.avgPrice,
+      currentValue: traderPositions.currentValue,
+      cashPnl: traderPositions.cashPnl,
+      userName: traders.userName,
+      profileImage: traders.profileImage,
+      verifiedBadge: traders.verifiedBadge,
+      traderTier: traders.traderTier,
+    })
+    .from(traderPositions)
+    .leftJoin(traders, eq(traderPositions.traderId, traders.id))
+    .where(
+      and(
+        eq(traderPositions.conditionId, conditionId),
+        eq(traderPositions.snapshotTime, latestTime)
+      )
+    )
+    .orderBy(desc(traderPositions.currentValue))
+    .limit(limit);
 }

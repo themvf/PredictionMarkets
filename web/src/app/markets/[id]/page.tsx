@@ -2,13 +2,22 @@ import { Suspense } from "react";
 import type { Metadata } from "next";
 import { notFound } from "next/navigation";
 import Link from "next/link";
-import { ChevronLeft } from "lucide-react";
+import { ChevronLeft, Users } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from "@/components/ui/table";
 import { getMarketById } from "@/db/queries/markets";
 import { getPriceHistoryWithRange } from "@/db/queries/price-snapshots";
+import { getMarketHolders } from "@/db/queries/whales";
 import { PriceChart } from "@/app/charts/price-chart";
 import { TimeRangeSelector } from "@/app/charts/time-range-selector";
 import { formatCurrency, formatPrice, formatRelativeTime } from "@/lib/utils";
@@ -58,6 +67,81 @@ async function MarketPriceChart({
             No price history available for this time range.
           </p>
         )}
+      </CardContent>
+    </Card>
+  );
+}
+
+// ── Top Holders Section ──────────────────────────────────
+
+const TIER_COLORS: Record<string, string> = {
+  whale: "bg-purple-500/15 text-purple-700 dark:text-purple-400",
+  shark: "bg-blue-500/15 text-blue-700 dark:text-blue-400",
+  dolphin: "bg-cyan-500/15 text-cyan-700 dark:text-cyan-400",
+};
+
+async function MarketTopHolders({ conditionId }: { conditionId: string }) {
+  const holders = await getMarketHolders(conditionId, 10);
+
+  if (holders.length === 0) return null;
+
+  return (
+    <Card>
+      <CardHeader>
+        <div className="flex items-center gap-2">
+          <Users className="h-4 w-4 text-muted-foreground" />
+          <CardTitle className="text-sm font-medium">Top Holders</CardTitle>
+        </div>
+      </CardHeader>
+      <CardContent>
+        <Table>
+          <TableHeader>
+            <TableRow>
+              <TableHead>Trader</TableHead>
+              <TableHead>Side</TableHead>
+              <TableHead className="text-right">Size</TableHead>
+              <TableHead className="text-right">Avg Price</TableHead>
+              <TableHead className="text-right">Value</TableHead>
+            </TableRow>
+          </TableHeader>
+          <TableBody>
+            {holders.map((h) => (
+              <TableRow key={h.id}>
+                <TableCell>
+                  <Link
+                    href={`/traders/${h.proxyWallet}`}
+                    className="hover:underline font-medium"
+                  >
+                    {h.userName || h.proxyWallet.slice(0, 10) + "..."}
+                  </Link>
+                  {h.verifiedBadge === 1 && <span className="ml-1">✅</span>}
+                  {h.traderTier && h.traderTier in TIER_COLORS && (
+                    <Badge
+                      variant="outline"
+                      className={`ml-1 text-xs ${TIER_COLORS[h.traderTier]}`}
+                    >
+                      {h.traderTier}
+                    </Badge>
+                  )}
+                </TableCell>
+                <TableCell>
+                  <Badge variant="outline" className="text-xs">
+                    {h.outcome}
+                  </Badge>
+                </TableCell>
+                <TableCell className="text-right font-mono">
+                  {h.size?.toLocaleString(undefined, { maximumFractionDigits: 0 }) ?? "—"}
+                </TableCell>
+                <TableCell className="text-right font-mono">
+                  {formatPrice(h.avgPrice)}
+                </TableCell>
+                <TableCell className="text-right font-mono">
+                  {formatCurrency(h.currentValue)}
+                </TableCell>
+              </TableRow>
+            ))}
+          </TableBody>
+        </Table>
       </CardContent>
     </Card>
   );
@@ -167,6 +251,13 @@ export default async function MarketDetailPage(props: Props) {
           marketId={market.id}
           searchParams={props.searchParams}
         />
+      </Suspense>
+
+      {/* Top Holders */}
+      <Suspense
+        fallback={<Skeleton className="h-[200px] w-full rounded-xl" />}
+      >
+        <MarketTopHolders conditionId={market.platformId} />
       </Suspense>
 
       {/* Meta info */}

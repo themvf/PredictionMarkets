@@ -9,7 +9,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { EmptyState } from "@/components/shared/empty-state";
 import { Pagination } from "@/components/shared/pagination";
 import { FilterSelect, SearchInput } from "@/components/shared/filter-bar";
-import { getTopTraders, searchTraders, getWatchlistIds } from "@/db/queries/traders";
+import { getTopTraders, getTopTradersByCategory, searchTraders, getWatchlistIds } from "@/db/queries/traders";
 import { formatCurrency, formatCompactCurrency } from "@/lib/utils";
 import { WatchlistStar } from "../watchlist/watchlist-star";
 
@@ -21,8 +21,16 @@ interface Props {
     sort?: string;
     page?: string;
     search?: string;
+    category?: string;
   }>;
 }
+
+const TIER_COLORS: Record<string, string> = {
+  whale: "bg-purple-500/15 text-purple-700 dark:text-purple-400",
+  shark: "bg-blue-500/15 text-blue-700 dark:text-blue-400",
+  dolphin: "bg-cyan-500/15 text-cyan-700 dark:text-cyan-400",
+  fish: "bg-gray-500/15 text-gray-700 dark:text-gray-400",
+};
 
 async function LeaderboardContent({ searchParams }: Props) {
   const params = await searchParams;
@@ -51,9 +59,12 @@ async function LeaderboardContent({ searchParams }: Props) {
   const orderBy =
     params.sort === "volume" ? "total_volume" as const : "total_pnl" as const;
   const page = params.page ? parseInt(params.page) : 1;
+  const category = params.category;
 
   const [result, watchedIds] = await Promise.all([
-    getTopTraders(orderBy, page),
+    category
+      ? getTopTradersByCategory(category, orderBy, page)
+      : getTopTraders(orderBy, page),
     getWatchlistIds(),
   ]);
 
@@ -105,12 +116,15 @@ function TraderCard({
     verifiedBadge: number | null;
     totalPnl: number | null;
     totalVolume: number | null;
+    traderTier?: string | null;
+    primaryCategory?: string | null;
   };
   rank: number | null;
   watched: boolean;
 }) {
   const medal: Record<number, string> = { 1: "\u{1F947}", 2: "\u{1F948}", 3: "\u{1F949}" };
   const name = trader.userName || trader.proxyWallet.slice(0, 12) + "...";
+  const tier = trader.traderTier ?? "";
 
   return (
     <Card>
@@ -124,15 +138,30 @@ function TraderCard({
 
         {/* Name */}
         <div className="flex-1 min-w-0">
-          <div className="flex items-center gap-1">
+          <div className="flex items-center gap-1.5">
             <span className="font-medium truncate">{name}</span>
             {trader.verifiedBadge === 1 && (
               <span title="Verified">✅</span>
             )}
+            {tier && tier in TIER_COLORS && (
+              <Badge
+                variant="outline"
+                className={`text-xs ${TIER_COLORS[tier]}`}
+              >
+                {tier.charAt(0).toUpperCase() + tier.slice(1)}
+              </Badge>
+            )}
           </div>
-          {trader.xUsername && (
-            <p className="text-xs text-muted-foreground">@{trader.xUsername}</p>
-          )}
+          <div className="flex items-center gap-2">
+            {trader.xUsername && (
+              <p className="text-xs text-muted-foreground">@{trader.xUsername}</p>
+            )}
+            {trader.primaryCategory && (
+              <Badge variant="secondary" className="text-xs">
+                {trader.primaryCategory}
+              </Badge>
+            )}
+          </div>
         </div>
 
         {/* Stats */}
@@ -175,6 +204,20 @@ export default function LeaderboardPage(props: Props) {
           options={[
             { value: "pnl", label: "P&L" },
             { value: "volume", label: "Volume" },
+          ]}
+        />
+        <FilterSelect
+          paramKey="category"
+          label="Category"
+          options={[
+            { value: "", label: "All Categories" },
+            { value: "Politics", label: "Politics" },
+            { value: "Finance", label: "Finance" },
+            { value: "Economy", label: "Economy" },
+            { value: "Crypto", label: "Crypto" },
+            { value: "Sports", label: "Sports" },
+            { value: "Tech", label: "Tech" },
+            { value: "Culture", label: "Culture" },
           ]}
         />
         <SearchInput paramKey="search" placeholder="Search traders..." />

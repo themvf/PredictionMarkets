@@ -10,6 +10,7 @@ from .models import (
     AgentLog, Alert, AnalysisResult, Insight,
     MarketPair, NormalizedMarket, PriceSnapshot,
     Trader, WhaleTrade, TraderPosition,
+    TraderMetrics, TraderCategoryPnl, TraderAnomaly,
 )
 
 import json
@@ -842,3 +843,307 @@ class MarketQueries:
                 "SELECT trader_id FROM trader_watchlist"
             ).fetchall()
             return {r["trader_id"] for r in rows}
+
+    # ── Trader Metrics ─────────────────────────────────────────
+
+    def upsert_trader_metrics(self, m: TraderMetrics) -> int:
+        """Insert or update computed metrics for a trader."""
+        with self.db._connect() as conn:
+            conn.execute("""
+                INSERT INTO trader_metrics (
+                    trader_id, proxy_wallet, win_rate, total_trades,
+                    avg_trade_size, avg_hold_time_hours, largest_win,
+                    largest_loss, sharpe_ratio, consistency_score,
+                    conviction_score, active_markets, categories_traded,
+                    primary_category, computed_at)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                ON CONFLICT(trader_id) DO UPDATE SET
+                    win_rate=excluded.win_rate,
+                    total_trades=excluded.total_trades,
+                    avg_trade_size=excluded.avg_trade_size,
+                    avg_hold_time_hours=excluded.avg_hold_time_hours,
+                    largest_win=excluded.largest_win,
+                    largest_loss=excluded.largest_loss,
+                    sharpe_ratio=excluded.sharpe_ratio,
+                    consistency_score=excluded.consistency_score,
+                    conviction_score=excluded.conviction_score,
+                    active_markets=excluded.active_markets,
+                    categories_traded=excluded.categories_traded,
+                    primary_category=excluded.primary_category,
+                    computed_at=excluded.computed_at
+            """, (
+                m.trader_id, m.proxy_wallet, m.win_rate, m.total_trades,
+                m.avg_trade_size, m.avg_hold_time_hours, m.largest_win,
+                m.largest_loss, m.sharpe_ratio, m.consistency_score,
+                m.conviction_score, m.active_markets, m.categories_traded,
+                m.primary_category, _now(),
+            ))
+            row = conn.execute(
+                "SELECT id FROM trader_metrics WHERE trader_id=?",
+                (m.trader_id,),
+            ).fetchone()
+            return row["id"] if row else 0
+
+    def get_trader_metrics(self, trader_id: int) -> Optional[Dict[str, Any]]:
+        with self.db._connect() as conn:
+            row = conn.execute(
+                "SELECT * FROM trader_metrics WHERE trader_id=?",
+                (trader_id,),
+            ).fetchone()
+            return dict(row) if row else None
+
+    # ── Trader Category P&L ────────────────────────────────────
+
+    def upsert_trader_category_pnl_batch(
+        self, rows: List[TraderCategoryPnl]
+    ) -> int:
+        """Batch upsert per-category P&L for a trader."""
+        if not rows:
+            return 0
+        now = _now()
+        with self.db._connect() as conn:
+            for r in rows:
+                conn.execute("""
+                    INSERT INTO trader_category_pnl (
+                        trader_id, category, pnl, volume,
+                        trade_count, win_count, computed_at)
+                    VALUES (?, ?, ?, ?, ?, ?, ?)
+                    ON CONFLICT(trader_id, category) DO UPDATE SET
+                        pnl=excluded.pnl,
+                        volume=excluded.volume,
+                        trade_count=excluded.trade_count,
+                        win_count=excluded.win_count,
+                        computed_at=excluded.computed_at
+                """, (
+                    r.trader_id, r.category, r.pnl, r.volume,
+                    r.trade_count, r.win_count, now,
+                ))
+            return len(rows)
+
+    def get_trader_category_pnl(
+        self, trader_id: int
+    ) -> List[Dict[str, Any]]:
+        with self.db._connect() as conn:
+            rows = conn.execute(
+                "SELECT * FROM trader_category_pnl WHERE trader_id=? ORDER BY volume DESC",
+                (trader_id,),
+            ).fetchall()
+            return [dict(r) for r in rows]
+
+    # ── Trader Anomalies ───────────────────────────────────────
+
+    def insert_trader_anomaly(self, a: TraderAnomaly) -> int:
+        """Insert an anomaly (skip if duplicate type+market for this trader)."""
+        with self.db._connect() as conn:
+            try:
+                if self.db._backend == "postgres":
+                    sql = """
+                        INSERT INTO trader_anomalies (
+                            trader_id, proxy_wallet, anomaly_type, severity,
+                            market_title, description, data, detected_at)
+                        VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                        ON CONFLICT (trader_id, anomaly_type, market_title)
+                        DO NOTHING RETURNING id
+                    """
+                    cursor = conn.execute(sql, (
+                        a.trader_id, a.proxy_wallet, a.anomaly_type,
+                        a.severity, a.market_title, a.description,
+                        a.data, _now(),
+                    ))
+                    row = cursor.fetchone()
+                    return row["id"] if row else 0
+                else:
+                    sql = """
+                        INSERT OR IGNORE INTO trader_anomalies (
+                            trader_id, proxy_wallet, anomaly_type, severity,
+                            market_title, description, data, detected_at)
+                        VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                    """
+                    cursor = conn.execute(sql, (
+                        a.trader_id, a.proxy_wallet, a.anomaly_type,
+                        a.severity, a.market_title, a.description,
+                        a.data, _now(),
+                    ))
+                    return cursor.lastrowid or 0
+            except Exception:
+                return 0
+
+    def insert_trader_anomalies_batch(self, anomalies: List[TraderAnomaly]) -> int:
+        """Batch insert anomalies, skipping duplicates."""
+        if not anomalies:
+            return 0
+        inserted = 0
+        now = _now()
+        with self.db._connect() as conn:
+            for a in anomalies:
+                try:
+                    if self.db._backend == "postgres":
+                        sql = """
+                            INSERT INTO trader_anomalies (
+                                trader_id, proxy_wallet, anomaly_type, severity,
+                                market_title, description, data, detected_at)
+                            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                            ON CONFLICT (trader_id, anomaly_type, market_title)
+                            DO NOTHING RETURNING id
+                        """
+                        cursor = conn.execute(sql, (
+                            a.trader_id, a.proxy_wallet, a.anomaly_type,
+                            a.severity, a.market_title, a.description,
+                            a.data, now,
+                        ))
+                        row = cursor.fetchone()
+                        if row:
+                            inserted += 1
+                    else:
+                        sql = """
+                            INSERT OR IGNORE INTO trader_anomalies (
+                                trader_id, proxy_wallet, anomaly_type, severity,
+                                market_title, description, data, detected_at)
+                            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                        """
+                        cursor = conn.execute(sql, (
+                            a.trader_id, a.proxy_wallet, a.anomaly_type,
+                            a.severity, a.market_title, a.description,
+                            a.data, now,
+                        ))
+                        if cursor.lastrowid:
+                            inserted += 1
+                except Exception:
+                    continue
+        return inserted
+
+    def get_trader_anomalies(self, trader_id: int,
+                              limit: int = 20) -> List[Dict[str, Any]]:
+        with self.db._connect() as conn:
+            rows = conn.execute("""
+                SELECT * FROM trader_anomalies
+                WHERE trader_id=?
+                ORDER BY detected_at DESC LIMIT ?
+            """, (trader_id, limit)).fetchall()
+            return [dict(r) for r in rows]
+
+    def get_recent_anomalies(self, limit: int = 50) -> List[Dict[str, Any]]:
+        """Get recent anomalies across all traders with trader info."""
+        with self.db._connect() as conn:
+            rows = conn.execute("""
+                SELECT ta.*, t.user_name, t.profile_image, t.verified_badge
+                FROM trader_anomalies ta
+                LEFT JOIN traders t ON ta.trader_id = t.id
+                ORDER BY ta.detected_at DESC LIMIT ?
+            """, (limit,)).fetchall()
+            return [dict(r) for r in rows]
+
+    def update_trader_intelligence(
+        self, trader_id: int, *,
+        win_rate: Optional[float] = None,
+        total_trades: Optional[int] = None,
+        avg_position_size: Optional[float] = None,
+        active_positions: Optional[int] = None,
+        trader_tier: Optional[str] = None,
+        primary_category: Optional[str] = None,
+        tags: Optional[str] = None,
+    ) -> None:
+        """Update the denormalized intelligence fields on the traders table."""
+        updates = []
+        params: list = []
+        if win_rate is not None:
+            updates.append("win_rate=?")
+            params.append(win_rate)
+        if total_trades is not None:
+            updates.append("total_trades=?")
+            params.append(total_trades)
+        if avg_position_size is not None:
+            updates.append("avg_position_size=?")
+            params.append(avg_position_size)
+        if active_positions is not None:
+            updates.append("active_positions=?")
+            params.append(active_positions)
+        if trader_tier is not None:
+            updates.append("trader_tier=?")
+            params.append(trader_tier)
+        if primary_category is not None:
+            updates.append("primary_category=?")
+            params.append(primary_category)
+        if tags is not None:
+            updates.append("tags=?")
+            params.append(tags)
+        if not updates:
+            return
+        params.append(_now())
+        params.append(trader_id)
+        with self.db._connect() as conn:
+            conn.execute(
+                f"UPDATE traders SET {', '.join(updates)}, last_updated=? WHERE id=?",
+                params,
+            )
+
+    def insert_trader_positions_batch(self, positions: List[TraderPosition]) -> int:
+        """Batch insert trader position snapshots in a single connection."""
+        if not positions:
+            return 0
+        now = _now()
+        with self.db._connect() as conn:
+            for pos in positions:
+                conn.execute("""
+                    INSERT INTO trader_positions (
+                        trader_id, proxy_wallet, condition_id, market_title,
+                        outcome, size, avg_price, initial_value, current_value,
+                        cash_pnl, percent_pnl, realized_pnl, cur_price,
+                        redeemable, event_slug, snapshot_time)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """, (
+                    pos.trader_id, pos.proxy_wallet, pos.condition_id,
+                    pos.market_title, pos.outcome, pos.size, pos.avg_price,
+                    pos.initial_value, pos.current_value, pos.cash_pnl,
+                    pos.percent_pnl, pos.realized_pnl, pos.cur_price,
+                    1 if pos.redeemable else 0, pos.event_slug, now,
+                ))
+            return len(positions)
+
+    def get_active_trader_ids(self, days: int = 30,
+                               limit: int = 500) -> List[Dict[str, Any]]:
+        """Get trader IDs that have whale trades in the last N days."""
+        cutoff_ts = int(
+            (datetime.now(timezone.utc) - timedelta(days=days)).timestamp()
+        )
+        with self.db._connect() as conn:
+            rows = conn.execute("""
+                SELECT DISTINCT wt.trader_id, t.proxy_wallet
+                FROM whale_trades wt
+                JOIN traders t ON wt.trader_id = t.id
+                WHERE wt.trade_timestamp >= ?
+                ORDER BY wt.trader_id
+                LIMIT ?
+            """, (cutoff_ts, limit)).fetchall()
+            return [dict(r) for r in rows]
+
+    def get_trader_trades_summary(self, trader_id: int) -> Dict[str, Any]:
+        """Get aggregated trade stats for a trader from whale_trades."""
+        with self.db._connect() as conn:
+            row = conn.execute("""
+                SELECT
+                    COUNT(*) as total_trades,
+                    AVG(usdc_size) as avg_trade_size,
+                    MAX(usdc_size) as max_trade_size,
+                    SUM(usdc_size) as total_volume,
+                    SUM(CASE WHEN side='BUY' THEN 1 ELSE 0 END) as buy_count,
+                    SUM(CASE WHEN side='SELL' THEN 1 ELSE 0 END) as sell_count
+                FROM whale_trades WHERE trader_id=?
+            """, (trader_id,)).fetchone()
+            return dict(row) if row else {}
+
+    def get_trader_trades_with_categories(
+        self, trader_id: int
+    ) -> List[Dict[str, Any]]:
+        """Get whale trades for a trader, joined with market category info."""
+        with self.db._connect() as conn:
+            rows = conn.execute("""
+                SELECT wt.*, m.category, m.subcategory, m.status as market_status
+                FROM whale_trades wt
+                LEFT JOIN markets m
+                    ON wt.condition_id = m.platform_id
+                    AND m.platform = 'polymarket'
+                WHERE wt.trader_id=?
+                ORDER BY wt.trade_timestamp DESC
+            """, (trader_id,)).fetchall()
+            return [dict(r) for r in rows]

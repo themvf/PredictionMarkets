@@ -126,6 +126,14 @@ class Trader:
     portfolio_value: Optional[float] = None
     first_seen: Optional[str] = None
     last_updated: Optional[str] = None
+    # New intelligence fields
+    win_rate: Optional[float] = None
+    total_trades: int = 0
+    avg_position_size: Optional[float] = None
+    active_positions: int = 0
+    trader_tier: str = ""               # whale, shark, dolphin, fish
+    primary_category: str = ""
+    tags: str = ""                      # comma-separated: early_mover,contrarian,...
 
 
 @dataclass
@@ -168,3 +176,51 @@ class TraderPosition:
     redeemable: bool = False
     event_slug: str = ""
     snapshot_time: Optional[str] = None
+
+
+@dataclass
+class TraderMetrics:
+    """Computed analytics for a trader, refreshed by ProfileAgent."""
+    id: Optional[int] = None
+    trader_id: Optional[int] = None
+    proxy_wallet: str = ""
+    win_rate: Optional[float] = None
+    total_trades: int = 0
+    avg_trade_size: Optional[float] = None
+    avg_hold_time_hours: Optional[float] = None
+    largest_win: Optional[float] = None
+    largest_loss: Optional[float] = None
+    sharpe_ratio: Optional[float] = None
+    consistency_score: Optional[float] = None
+    conviction_score: Optional[float] = None
+    active_markets: int = 0
+    categories_traded: str = ""         # JSON array
+    primary_category: str = ""
+    computed_at: Optional[str] = None
+
+
+@dataclass
+class TraderCategoryPnl:
+    """Per-category P&L breakdown for a trader."""
+    id: Optional[int] = None
+    trader_id: Optional[int] = None
+    category: str = ""
+    pnl: float = 0.0
+    volume: float = 0.0
+    trade_count: int = 0
+    win_count: int = 0
+    computed_at: Optional[str] = None
+
+
+@dataclass
+class TraderAnomaly:
+    """Detected unusual trading behavior."""
+    id: Optional[int] = None
+    trader_id: Optional[int] = None
+    proxy_wallet: str = ""
+    anomaly_type: str = ""              # large_conviction, early_entry, etc.
+    severity: str = "info"
+    market_title: str = ""
+    description: str = ""
+    data: str = ""                      # JSON blob
+    detected_at: Optional[str] = None

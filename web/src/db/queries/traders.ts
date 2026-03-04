@@ -1,5 +1,12 @@
 import { db } from "@/db";
-import { traders, traderPositions, traderWatchlist } from "@/db/schema";
+import {
+  traders,
+  traderPositions,
+  traderWatchlist,
+  traderMetrics,
+  traderCategoryPnl,
+  traderAnomalies,
+} from "@/db/schema";
 import { eq, desc, ilike, sql, and, isNotNull } from "drizzle-orm";
 import { PAGE_SIZE } from "@/lib/constants";
 
@@ -121,4 +128,101 @@ export async function removeFromWatchlist(traderId: number) {
   await db
     .delete(traderWatchlist)
     .where(eq(traderWatchlist.traderId, traderId));
+}
+
+// ── Trader Metrics ────────────────────────────
+
+export async function getTraderMetrics(traderId: number) {
+  const result = await db
+    .select()
+    .from(traderMetrics)
+    .where(eq(traderMetrics.traderId, traderId))
+    .limit(1);
+  return result[0] ?? null;
+}
+
+// ── Trader Category P&L ──────────────────────
+
+export async function getTraderCategoryPnl(traderId: number) {
+  return db
+    .select()
+    .from(traderCategoryPnl)
+    .where(eq(traderCategoryPnl.traderId, traderId))
+    .orderBy(desc(traderCategoryPnl.volume));
+}
+
+// ── Trader Anomalies ─────────────────────────
+
+export async function getTraderAnomalies(traderId: number, limit = 20) {
+  return db
+    .select()
+    .from(traderAnomalies)
+    .where(eq(traderAnomalies.traderId, traderId))
+    .orderBy(desc(traderAnomalies.detectedAt))
+    .limit(limit);
+}
+
+export async function getRecentAnomalies(limit = 50) {
+  return db
+    .select({
+      id: traderAnomalies.id,
+      traderId: traderAnomalies.traderId,
+      proxyWallet: traderAnomalies.proxyWallet,
+      anomalyType: traderAnomalies.anomalyType,
+      severity: traderAnomalies.severity,
+      marketTitle: traderAnomalies.marketTitle,
+      description: traderAnomalies.description,
+      data: traderAnomalies.data,
+      detectedAt: traderAnomalies.detectedAt,
+      userName: traders.userName,
+      profileImage: traders.profileImage,
+      verifiedBadge: traders.verifiedBadge,
+    })
+    .from(traderAnomalies)
+    .leftJoin(traders, eq(traderAnomalies.traderId, traders.id))
+    .orderBy(desc(traderAnomalies.detectedAt))
+    .limit(limit);
+}
+
+// ── Category Leaderboard ─────────────────────
+
+export async function getTopTradersByCategory(
+  category: string,
+  orderBy: "total_pnl" | "total_volume" = "total_pnl",
+  page = 1
+) {
+  const col = orderBy === "total_volume" ? traders.totalVolume : traders.totalPnl;
+  const offset = (page - 1) * PAGE_SIZE;
+
+  const [data, countResult] = await Promise.all([
+    db
+      .select()
+      .from(traders)
+      .where(
+        and(
+          eq(traders.primaryCategory, category),
+          isNotNull(col)
+        )
+      )
+      .orderBy(desc(col))
+      .limit(PAGE_SIZE)
+      .offset(offset),
+    db
+      .select({ count: sql<number>`count(*)` })
+      .from(traders)
+      .where(
+        and(
+          eq(traders.primaryCategory, category),
+          isNotNull(col)
+        )
+      ),
+  ]);
+
+  return {
+    data,
+    total: Number(countResult[0]?.count ?? 0),
+    page,
+    pageSize: PAGE_SIZE,
+    totalPages: Math.ceil(Number(countResult[0]?.count ?? 0) / PAGE_SIZE),
+  };
 }
