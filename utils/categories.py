@@ -420,6 +420,8 @@ TAG_CATEGORY_MAP: dict[str, str] = {
     "economy": "Economy",
     "economics": "Economy",
     "macro indicators": "Economy",
+    "economic policy": "Economy",
+    "fed": "Economy",
     "politics": "Politics",
     "elections": "Politics",
     "us politics": "Politics",
@@ -456,6 +458,23 @@ TAG_SUBCATEGORY_MAP: dict[str, str] = {
 }
 
 
+# Higher = more specific.  "Earnings" beats "Stocks" when both tags exist.
+_SUBTAG_PRIORITY: dict[str, int] = {
+    "Earnings": 10,
+    "Earnings Calendar": 10,
+    "IPOs": 9,
+    "Fed Rates": 9,
+    "Trade War": 9,
+    "Macro Indicators": 8,
+    "Daily": 7,
+    "Weekly": 7,
+    "Monthly": 7,
+    "Commodities": 5,
+    "Forex": 5,
+    "Indices": 5,
+    "Stocks": 3,
+}
+
 _TAG_PRIORITY: dict[str, int] = {
     "Crypto": 10,
     "Sports": 10,
@@ -478,13 +497,26 @@ def category_from_tags(tags: list[dict]) -> tuple[str, str]:
     When an event carries multiple category tags (e.g. both "Crypto" and
     "Finance" on MicroStrategy), we pick the highest-priority category.
     Priority: Crypto/Sports > Politics > Tech > Economy > Finance.
-    """
-    tag_labels = [t.get("label", "").lower().strip() for t in tags if t.get("label")]
 
-    # Collect ALL matching categories with their priorities
+    Tags with ``forceHide=True`` are excluded from category resolution
+    (Polymarket uses this flag for secondary/discoverability tags).
+    """
+    # Separate visible tags (for category) from all tags (for subcategory)
+    visible = [
+        t.get("label", "").lower().strip()
+        for t in tags
+        if t.get("label") and not t.get("forceHide")
+    ]
+    all_labels = [
+        t.get("label", "").lower().strip()
+        for t in tags
+        if t.get("label")
+    ]
+
+    # Pick highest-priority category from visible tags only
     best_category = ""
     best_priority = -1
-    for label in tag_labels:
+    for label in visible:
         cat = TAG_CATEGORY_MAP.get(label)
         if cat:
             pri = _TAG_PRIORITY.get(cat, 0)
@@ -492,12 +524,16 @@ def category_from_tags(tags: list[dict]) -> tuple[str, str]:
                 best_priority = pri
                 best_category = cat
 
-    # Find the most specific subcategory
+    # Pick highest-priority subcategory (check all tags)
     subcategory = ""
-    for label in tag_labels:
-        if label in TAG_SUBCATEGORY_MAP:
-            subcategory = TAG_SUBCATEGORY_MAP[label]
-            break
+    best_sub_pri = -1
+    for label in all_labels:
+        sub = TAG_SUBCATEGORY_MAP.get(label)
+        if sub:
+            pri = _SUBTAG_PRIORITY.get(sub, 0)
+            if pri > best_sub_pri:
+                best_sub_pri = pri
+                subcategory = sub
 
     return best_category, subcategory
 
