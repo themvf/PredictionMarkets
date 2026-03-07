@@ -83,12 +83,111 @@ const ANOMALY_SEVERITY: Record<string, string> = {
 
 // ── Page ─────────────────────────────────────────────────────
 
+// ── Live positions fetch for untracked wallets ───────────
+
+interface LivePosition {
+  title: string;
+  outcome: string;
+  size: number;
+  curPrice: number;
+  currentValue: number;
+  cashPnl: number;
+  percentPnl: number;
+}
+
+async function fetchLivePositions(wallet: string): Promise<LivePosition[]> {
+  try {
+    const resp = await fetch(
+      `https://data-api.polymarket.com/positions?user=${wallet}&sizeThreshold=0.1&limit=50&sortBy=CURRENT`,
+      { next: { revalidate: 300 } }
+    );
+    if (!resp.ok) return [];
+    const data = await resp.json();
+    const list = Array.isArray(data) ? data : data?.data ?? data?.positions ?? [];
+    return list.map((p: Record<string, unknown>) => ({
+      title: String(p.title ?? p.marketTitle ?? ""),
+      outcome: String(p.outcome ?? (p.outcomeIndex === 0 ? "Yes" : "No")),
+      size: Number(p.size ?? 0),
+      curPrice: Number(p.curPrice ?? p.price ?? 0),
+      currentValue: Number(p.currentValue ?? p.current ?? 0),
+      cashPnl: Number(p.cashPnl ?? 0),
+      percentPnl: Number(p.percentPnl ?? 0),
+    }));
+  } catch {
+    return [];
+  }
+}
+
+// ── Page ─────────────────────────────────────────────────
+
 export default async function TraderProfilePage({ params }: Props) {
   const { wallet } = await params;
   const trader = await getTraderByWallet(wallet);
 
+  // Unknown wallet: show live-only profile from Polymarket API
   if (!trader) {
-    notFound();
+    const livePositions = await fetchLivePositions(wallet);
+
+    return (
+      <div className="space-y-6">
+        <Button variant="ghost" size="sm" asChild>
+          <Link href="/leaderboard">
+            <ChevronLeft className="mr-1 h-4 w-4" />
+            Back to Leaderboard
+          </Link>
+        </Button>
+
+        <div className="space-y-1">
+          <h1 className="text-2xl font-bold">{wallet.slice(0, 16)}...</h1>
+          <Badge variant="secondary" className="text-xs">Untracked Wallet</Badge>
+          <p className="text-xs text-muted-foreground font-mono">{wallet}</p>
+        </div>
+
+        <Card>
+          <CardHeader>
+            <CardTitle>Positions (Live from Polymarket)</CardTitle>
+          </CardHeader>
+          <CardContent>
+            {livePositions.length > 0 ? (
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead className="min-w-[200px]">Market</TableHead>
+                    <TableHead>Outcome</TableHead>
+                    <TableHead className="text-right">Cur Price</TableHead>
+                    <TableHead className="text-right">Value</TableHead>
+                    <TableHead className="text-right">P&L</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {livePositions.map((pos, i) => (
+                    <TableRow key={i}>
+                      <TableCell className="font-medium">{pos.title}</TableCell>
+                      <TableCell>{pos.outcome}</TableCell>
+                      <TableCell className="text-right font-mono">
+                        {formatPrice(pos.curPrice)}
+                      </TableCell>
+                      <TableCell className="text-right font-mono">
+                        {formatCurrency(pos.currentValue)}
+                      </TableCell>
+                      <TableCell
+                        className={`text-right font-mono ${pos.cashPnl >= 0 ? "text-green-600" : "text-red-600"}`}
+                      >
+                        {formatCurrency(pos.cashPnl)}
+                      </TableCell>
+                    </TableRow>
+                  ))}
+                </TableBody>
+              </Table>
+            ) : (
+              <p className="text-sm text-muted-foreground py-4 text-center">
+                No open positions found for this wallet.
+              </p>
+            )}
+          </CardContent>
+        </Card>
+      </div>
+    );
   }
 
   const [positions, recentTrades, watchedIds, metrics, categoryPnl, anomalies] =
