@@ -17,7 +17,6 @@ import {
 } from "@/components/ui/table";
 import { getMarketById } from "@/db/queries/markets";
 import { getPriceHistoryWithRange } from "@/db/queries/price-snapshots";
-import { getMarketHolders } from "@/db/queries/whales";
 import { PriceChart } from "@/app/charts/price-chart";
 import { TimeRangeSelector } from "@/app/charts/time-range-selector";
 import { formatCurrency, formatPrice, formatRelativeTime } from "@/lib/utils";
@@ -72,16 +71,46 @@ async function MarketPriceChart({
   );
 }
 
-// ── Top Holders Section ──────────────────────────────────
+// ── Top Holders Section (live from Polymarket API) ───────
 
-const TIER_COLORS: Record<string, string> = {
-  whale: "bg-purple-500/15 text-purple-700 dark:text-purple-400",
-  shark: "bg-blue-500/15 text-blue-700 dark:text-blue-400",
-  dolphin: "bg-cyan-500/15 text-cyan-700 dark:text-cyan-400",
-};
+interface PolymarketHolder {
+  proxyWallet: string;
+  name: string;
+  amount: number;
+  outcomeIndex: number;
+  verified: boolean;
+}
+
+async function fetchLiveHolders(conditionId: string): Promise<PolymarketHolder[]> {
+  try {
+    const resp = await fetch(
+      `https://data-api.polymarket.com/holders?market=${conditionId}&limit=20`,
+      { next: { revalidate: 300 } } // cache 5 min
+    );
+    if (!resp.ok) return [];
+    const data = await resp.json();
+
+    // API returns array of { token, holders[] } per outcome
+    const all: PolymarketHolder[] = [];
+    for (const group of data) {
+      for (const h of group.holders ?? []) {
+        all.push({
+          proxyWallet: h.proxyWallet,
+          name: h.name || h.pseudonym || "",
+          amount: h.amount ?? 0,
+          outcomeIndex: h.outcomeIndex ?? 0,
+          verified: h.verified ?? false,
+        });
+      }
+    }
+    return all;
+  } catch {
+    return [];
+  }
+}
 
 async function MarketTopHolders({ conditionId }: { conditionId: string }) {
-  const holders = await getMarketHolders(conditionId, 20);
+  const holders = await fetchLiveHolders(conditionId);
 
   if (holders.length === 0) return null;
 
@@ -99,44 +128,31 @@ async function MarketTopHolders({ conditionId }: { conditionId: string }) {
             <TableRow>
               <TableHead>Trader</TableHead>
               <TableHead>Side</TableHead>
-              <TableHead className="text-right">Size</TableHead>
-              <TableHead className="text-right">Avg Price</TableHead>
-              <TableHead className="text-right">Value</TableHead>
+              <TableHead className="text-right">Shares</TableHead>
             </TableRow>
           </TableHeader>
           <TableBody>
-            {holders.map((h) => (
-              <TableRow key={h.id}>
+            {holders.map((h, i) => (
+              <TableRow key={`${h.proxyWallet}-${h.outcomeIndex}-${i}`}>
                 <TableCell>
                   <Link
                     href={`/traders/${h.proxyWallet}`}
                     className="hover:underline font-medium"
                   >
-                    {h.userName || h.proxyWallet.slice(0, 10) + "..."}
+                    {h.name || h.proxyWallet.slice(0, 10) + "..."}
                   </Link>
-                  {h.verifiedBadge === 1 && <span className="ml-1">✅</span>}
-                  {h.traderTier && h.traderTier in TIER_COLORS && (
-                    <Badge
-                      variant="outline"
-                      className={`ml-1 text-xs ${TIER_COLORS[h.traderTier]}`}
-                    >
-                      {h.traderTier}
-                    </Badge>
-                  )}
+                  {h.verified && <span className="ml-1">✅</span>}
                 </TableCell>
                 <TableCell>
-                  <Badge variant="outline" className="text-xs">
-                    {h.outcome}
+                  <Badge
+                    variant="outline"
+                    className={`text-xs ${h.outcomeIndex === 0 ? "border-green-500 text-green-600" : "border-red-500 text-red-600"}`}
+                  >
+                    {h.outcomeIndex === 0 ? "Yes" : "No"}
                   </Badge>
                 </TableCell>
                 <TableCell className="text-right font-mono">
-                  {h.size?.toLocaleString(undefined, { maximumFractionDigits: 0 }) ?? "—"}
-                </TableCell>
-                <TableCell className="text-right font-mono">
-                  {formatPrice(h.avgPrice)}
-                </TableCell>
-                <TableCell className="text-right font-mono">
-                  {formatCurrency(h.currentValue)}
+                  {h.amount.toLocaleString(undefined, { maximumFractionDigits: 0 })}
                 </TableCell>
               </TableRow>
             ))}
