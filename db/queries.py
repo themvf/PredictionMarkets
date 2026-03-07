@@ -179,6 +179,30 @@ class MarketQueries:
             ).fetchall()
             return [dict(r) for r in rows]
 
+    def close_expired_markets(self) -> int:
+        """Mark active markets whose close_time has passed as 'closed'.
+
+        Returns the number of markets updated.
+        """
+        with self.db._connect() as conn:
+            if self.db._backend == "postgres":
+                cursor = conn.execute("""
+                    UPDATE markets SET status = 'closed'
+                    WHERE status = 'active'
+                      AND close_time IS NOT NULL
+                      AND close_time != ''
+                      AND close_time::timestamptz < NOW()
+                """)
+            else:
+                cursor = conn.execute("""
+                    UPDATE markets SET status = 'closed'
+                    WHERE status = 'active'
+                      AND close_time IS NOT NULL
+                      AND close_time != ''
+                      AND close_time < datetime('now')
+                """)
+            return cursor.rowcount
+
     # ── Market Pairs ─────────────────────────────────────────
 
     def upsert_pair(self, pair: MarketPair) -> int:

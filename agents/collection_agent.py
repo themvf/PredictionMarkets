@@ -13,6 +13,7 @@ from __future__ import annotations
 
 import json
 from concurrent.futures import ThreadPoolExecutor, as_completed
+from datetime import datetime, timezone
 from typing import Any, Dict, List, Tuple
 
 from .base import AgentResult, AgentStatus, BaseAgent
@@ -33,6 +34,9 @@ class CollectionAgent(BaseAgent):
         queries = context["queries"]
         kalshi_client = context.get("kalshi_client")
         polymarket_client = context.get("polymarket_client")
+
+        # Close markets whose close_time has passed before collecting prices
+        closed = queries.close_expired_markets()
 
         snapshots_created = 0
         errors: List[str] = []
@@ -62,13 +66,15 @@ class CollectionAgent(BaseAgent):
                 snapshots_created += len(snapshots)
 
         error_summary = f" ({len(errors)} errors)" if errors else ""
+        closed_summary = f" Closed {closed} expired markets." if closed else ""
         return AgentResult(
             agent_name=self.name,
             status=AgentStatus.SUCCESS,
             items_processed=snapshots_created,
-            summary=f"Collected {snapshots_created} price snapshots{error_summary}.",
+            summary=f"Collected {snapshots_created} price snapshots{error_summary}.{closed_summary}",
             data={
                 "snapshots_created": snapshots_created,
+                "markets_closed": closed,
                 "errors": errors[:10],
             },
         )
@@ -154,6 +160,17 @@ class CollectionAgent(BaseAgent):
         volume = m.get("volume", market.get("volume"))
         liquidity = m.get("open_interest", market.get("liquidity"))
 
+        # Detect closed markets: check if close_time has passed
+        status = market.get("status", "active")
+        close_time_str = market.get("close_time")
+        if status == "active" and close_time_str:
+            try:
+                ct = datetime.fromisoformat(close_time_str.replace("Z", "+00:00"))
+                if ct < datetime.now(timezone.utc):
+                    status = "closed"
+            except (ValueError, TypeError):
+                pass
+
         market_update = NormalizedMarket(
             platform="kalshi",
             platform_id=ticker,
@@ -161,12 +178,12 @@ class CollectionAgent(BaseAgent):
             description=market.get("description", ""),
             category=market.get("category", ""),
             subcategory=market.get("subcategory", ""),
-            status=market.get("status", "active"),
+            status=status,
             yes_price=yes_price,
             no_price=no_price,
             volume=volume,
             liquidity=liquidity,
-            close_time=market.get("close_time"),
+            close_time=close_time_str,
             url=market.get("url", ""),
         )
 
@@ -249,6 +266,17 @@ class CollectionAgent(BaseAgent):
             except Exception:
                 pass
 
+        # Detect closed markets: check if close_time has passed
+        status = market.get("status", "active")
+        close_time = market.get("close_time")
+        if status == "active" and close_time:
+            try:
+                ct = datetime.fromisoformat(close_time.replace("Z", "+00:00"))
+                if ct < datetime.now(timezone.utc):
+                    status = "closed"
+            except (ValueError, TypeError):
+                pass
+
         market_update = NormalizedMarket(
             platform="polymarket",
             platform_id=condition_id,
@@ -256,12 +284,12 @@ class CollectionAgent(BaseAgent):
             description=market.get("description", ""),
             category=market.get("category", ""),
             subcategory=market.get("subcategory", ""),
-            status=market.get("status", "active"),
+            status=status,
             yes_price=yes_price,
             no_price=no_price,
             volume=market.get("volume"),
             liquidity=market.get("liquidity"),
-            close_time=market.get("close_time"),
+            close_time=close_time,
             url=market.get("url", ""),
         )
 
