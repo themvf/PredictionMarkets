@@ -81,7 +81,7 @@ const TIER_COLORS: Record<string, string> = {
 };
 
 async function MarketTopHolders({ conditionId }: { conditionId: string }) {
-  const holders = await getMarketHolders(conditionId, 10);
+  const holders = await getMarketHolders(conditionId, 20);
 
   if (holders.length === 0) return null;
 
