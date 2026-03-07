@@ -22,7 +22,7 @@ export async function getWhaleFavoriteMarkets(
   return rows.rows as unknown as Market[];
 }
 
-/** Active markets closing within the next 24 hours */
+/** Active markets closing within the next 48 hours */
 export async function getClosingSoonMarkets(
   limit = DEFAULT_LIMIT
 ): Promise<Market[]> {
@@ -32,9 +32,8 @@ export async function getClosingSoonMarkets(
       WHERE status = 'active'
         AND close_time IS NOT NULL
         AND close_time != ''
-        AND close_time ~ '^\d{4}-\d{2}-\d{2}'
         AND close_time::timestamptz > NOW()
-        AND close_time::timestamptz <= NOW() + INTERVAL '24 hours'
+        AND close_time::timestamptz <= NOW() + INTERVAL '48 hours'
       ORDER BY close_time::timestamptz ASC
       LIMIT ${limit}
     `);

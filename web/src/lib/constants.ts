@@ -81,13 +81,6 @@ export const SMART_FILTERS = [
     activeClassName: "border-green-400 text-green-400 bg-green-400/20",
   },
   {
-    key: "high_arb",
-    label: "High Arb Potential",
-    icon: "TrendingUp",
-    className: "border-purple-400 text-purple-400 hover:bg-purple-400/10",
-    activeClassName: "border-purple-400 text-purple-400 bg-purple-400/20",
-  },
-  {
     key: "hottest_24h",
     label: "Hottest 24h",
     icon: "Flame",
