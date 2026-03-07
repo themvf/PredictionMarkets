@@ -180,7 +180,11 @@ class MarketQueries:
             return [dict(r) for r in rows]
 
     def close_expired_markets(self) -> int:
-        """Mark active markets whose close_time has passed as 'closed'.
+        """Mark active markets as 'closed' if expired or resolved.
+
+        Detects two cases:
+        1. close_time has passed
+        2. Price has settled at 0 or 1 (resolved early)
 
         Returns the number of markets updated.
         """
@@ -189,17 +193,23 @@ class MarketQueries:
                 cursor = conn.execute("""
                     UPDATE markets SET status = 'closed'
                     WHERE status = 'active'
-                      AND close_time IS NOT NULL
-                      AND close_time != ''
-                      AND close_time::timestamptz < NOW()
+                      AND (
+                        (close_time IS NOT NULL AND close_time != ''
+                         AND close_time::timestamptz < NOW())
+                        OR yes_price >= 0.99
+                        OR yes_price <= 0.01
+                      )
                 """)
             else:
                 cursor = conn.execute("""
                     UPDATE markets SET status = 'closed'
                     WHERE status = 'active'
-                      AND close_time IS NOT NULL
-                      AND close_time != ''
-                      AND close_time < datetime('now')
+                      AND (
+                        (close_time IS NOT NULL AND close_time != ''
+                         AND close_time < datetime('now'))
+                        OR yes_price >= 0.99
+                        OR yes_price <= 0.01
+                      )
                 """)
             return cursor.rowcount
 

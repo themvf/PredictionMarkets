@@ -271,16 +271,21 @@ class CollectionAgent(BaseAgent):
             except Exception:
                 pass
 
-        # Detect closed markets: check if close_time has passed
+        # Detect closed/resolved markets
         status = market.get("status", "active")
         close_time = market.get("close_time")
-        if status == "active" and close_time:
-            try:
-                ct = datetime.fromisoformat(close_time.replace("Z", "+00:00"))
-                if ct < datetime.now(timezone.utc):
-                    status = "closed"
-            except (ValueError, TypeError):
-                pass
+        if status == "active":
+            # Check if price has settled (resolved early)
+            if yes_price is not None and (yes_price >= 0.99 or yes_price <= 0.01):
+                status = "closed"
+            # Check if close_time has passed
+            elif close_time:
+                try:
+                    ct = datetime.fromisoformat(close_time.replace("Z", "+00:00"))
+                    if ct < datetime.now(timezone.utc):
+                        status = "closed"
+                except (ValueError, TypeError):
+                    pass
 
         market_update = NormalizedMarket(
             platform="polymarket",
