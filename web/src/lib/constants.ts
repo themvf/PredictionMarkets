@@ -42,15 +42,8 @@ export const SEVERITY_COLORS: Record<string, string> = {
 /** Market categories used across the app */
 export const CATEGORIES = [
   "All",
-  "Politics",
   "Economy",
   "Finance",
-  "Crypto",
-  "Tech",
-  "Culture",
-  "World",
-  "Climate & Science",
-  "Other",
 ] as const;
 
 /** Default pagination size */

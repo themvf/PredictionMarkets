@@ -121,13 +121,11 @@ export default function FirstTimePage(props: Props) {
         <FilterSelect
           paramKey="categories"
           label="Categories"
-          defaultValue="Politics,Tech,Finance"
+          defaultValue="Finance,Economy"
           options={[
-            { value: "Politics,Tech,Finance", label: "Default (Pol/Tech/Fin)" },
-            { value: "Politics", label: "Politics" },
-            { value: "Crypto", label: "Crypto" },
-            { value: "Tech", label: "Tech" },
+            { value: "Finance,Economy", label: "All (Finance/Economy)" },
             { value: "Finance", label: "Finance" },
+            { value: "Economy", label: "Economy" },
           ]}
         />
         <FilterSelect

@@ -46,11 +46,7 @@ _TARGET_TAG_SLUGS = [
     "macro-indicators",
     "economic-policy",
     "fed",
-    "politics",
-    "elections",
-    "us-politics",
     "trade-war",
-    "trump",
 ]
 
 
@@ -163,13 +159,10 @@ class DiscoveryAgent(BaseAgent):
                 raw_category = clean.get("groupItemTitle", "")
             category = normalize_category(raw_category, title)
 
-        # Validate category — only allow known values
-        _VALID_CATEGORIES = {
-            "Politics", "World", "Finance", "Economy",
-            "Tech", "Crypto", "Culture", "Climate & Science", "Other",
-        }
+        # Only ingest Finance and Economy markets
+        _VALID_CATEGORIES = {"Finance", "Economy"}
         if category not in _VALID_CATEGORIES:
-            category = "Other"
+            return None
 
         # ── Subcategory resolution ───────────────────────────
         # Priority: tag-derived subcategory > title keyword extraction

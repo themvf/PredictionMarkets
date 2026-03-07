@@ -23,7 +23,7 @@ from db.models import NormalizedMarket, PriceSnapshot
 _MAX_WORKERS = 20
 
 # Only collect price snapshots for these categories to control costs.
-TARGET_CATEGORIES = ["Economy", "Finance", "Politics"]
+TARGET_CATEGORIES = ["Economy", "Finance"]
 
 
 class CollectionAgent(BaseAgent):

@@ -212,12 +212,8 @@ export default function LeaderboardPage(props: Props) {
           defaultValue="all"
           options={[
             { value: "all", label: "All Categories" },
-            { value: "Politics", label: "Politics" },
             { value: "Finance", label: "Finance" },
             { value: "Economy", label: "Economy" },
-            { value: "Crypto", label: "Crypto" },
-            { value: "Tech", label: "Tech" },
-            { value: "Culture", label: "Culture" },
           ]}
         />
         <SearchInput paramKey="search" placeholder="Search traders..." />
