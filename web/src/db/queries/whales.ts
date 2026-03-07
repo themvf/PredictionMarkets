@@ -74,7 +74,7 @@ export async function getFirstTimeTrades(
 
   // Whitelist categories to prevent injection — only known values pass through
   const ALLOWED_CATEGORIES = new Set([
-    "Politics", "Sports", "Crypto", "Culture",
+    "Politics", "Crypto", "Culture",
     "Weather", "Economics", "Tech", "Finance",
   ]);
   const safeCats = categories.filter((c) => ALLOWED_CATEGORIES.has(c));

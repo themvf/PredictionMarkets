@@ -24,7 +24,7 @@ _MAX_WORKERS = 10
 # All Polymarket leaderboard categories
 _CATEGORIES = [
     "OVERALL", "POLITICS", "ECONOMICS", "FINANCE",
-    "SPORTS", "CRYPTO", "CULTURE", "TECH",
+    "CRYPTO", "CULTURE", "TECH",
 ]
 _TIME_PERIODS = ["ALL", "MONTH", "WEEK"]
 

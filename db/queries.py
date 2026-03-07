@@ -203,6 +203,68 @@ class MarketQueries:
                 """)
             return cursor.rowcount
 
+    def prune_old_closed_markets(self, days: int = 30) -> Dict[str, int]:
+        """Delete closed markets older than `days`, preserving those with whale trades.
+
+        Deletes associated price_snapshots, market_pairs, and alerts first.
+        Returns counts of deleted rows per table.
+        """
+        result = {"markets": 0, "price_snapshots": 0, "market_pairs": 0, "alerts": 0}
+
+        with self.db._connect() as conn:
+            if self.db._backend == "postgres":
+                cutoff_clause = f"close_time::timestamptz < NOW() - INTERVAL '{days} days'"
+            else:
+                cutoff_clause = f"close_time < datetime('now', '-{days} days')"
+
+            # Find prunable market IDs: closed, past cutoff, no whale trades
+            ids_rows = conn.execute(f"""
+                SELECT m.id FROM markets m
+                WHERE m.status = 'closed'
+                  AND m.close_time IS NOT NULL
+                  AND m.close_time != ''
+                  AND {cutoff_clause}
+                  AND NOT EXISTS (
+                      SELECT 1 FROM whale_trades wt
+                      WHERE wt.condition_id = m.platform_id
+                  )
+            """).fetchall()
+
+            market_ids = [r["id"] for r in ids_rows]
+            if not market_ids:
+                return result
+
+            placeholders = ",".join("?" for _ in market_ids)
+
+            # Delete child rows first
+            cur = conn.execute(
+                f"DELETE FROM price_snapshots WHERE market_id IN ({placeholders})",
+                market_ids,
+            )
+            result["price_snapshots"] = cur.rowcount
+
+            cur = conn.execute(
+                f"DELETE FROM market_pairs WHERE kalshi_market_id IN ({placeholders}) "
+                f"OR polymarket_market_id IN ({placeholders})",
+                market_ids + market_ids,
+            )
+            result["market_pairs"] = cur.rowcount
+
+            cur = conn.execute(
+                f"DELETE FROM alerts WHERE market_id IN ({placeholders})",
+                market_ids,
+            )
+            result["alerts"] = cur.rowcount
+
+            # Delete the markets
+            cur = conn.execute(
+                f"DELETE FROM markets WHERE id IN ({placeholders})",
+                market_ids,
+            )
+            result["markets"] = cur.rowcount
+
+        return result
+
     # ── Market Pairs ─────────────────────────────────────────
 
     def upsert_pair(self, pair: MarketPair) -> int:

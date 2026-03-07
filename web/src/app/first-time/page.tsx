@@ -125,7 +125,6 @@ export default function FirstTimePage(props: Props) {
           options={[
             { value: "Politics,Tech,Finance", label: "Default (Pol/Tech/Fin)" },
             { value: "Politics", label: "Politics" },
-            { value: "Sports", label: "Sports" },
             { value: "Crypto", label: "Crypto" },
             { value: "Tech", label: "Tech" },
             { value: "Finance", label: "Finance" },

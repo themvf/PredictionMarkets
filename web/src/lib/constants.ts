@@ -45,7 +45,6 @@ export const CATEGORIES = [
   "Politics",
   "Economy",
   "Finance",
-  "Sports",
   "Crypto",
   "Tech",
   "Culture",

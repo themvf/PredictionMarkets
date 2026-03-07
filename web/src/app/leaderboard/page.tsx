@@ -216,7 +216,6 @@ export default function LeaderboardPage(props: Props) {
             { value: "Finance", label: "Finance" },
             { value: "Economy", label: "Economy" },
             { value: "Crypto", label: "Crypto" },
-            { value: "Sports", label: "Sports" },
             { value: "Tech", label: "Tech" },
             { value: "Culture", label: "Culture" },
           ]}
