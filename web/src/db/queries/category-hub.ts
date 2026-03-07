@@ -169,15 +169,20 @@ export interface CategoryTopTrader {
   avgTradeSize: number;
   buyVolume: number;
   sellVolume: number;
+  winRate: number | null;
+  traderTier: string | null;
 }
 
 export async function getCategoryTopTraders(
   category: string,
-  limit = 20
+  limit = 20,
+  minTrades = 20,
+  minWinRate = 0.75
 ): Promise<CategoryTopTrader[]> {
   const result = await db.execute(sql`
     SELECT t.id, t.proxy_wallet, t.user_name, t.profile_image,
-           t.verified_badge, t.total_pnl,
+           t.verified_badge, t.total_pnl, t.trader_tier,
+           tm.win_rate,
            count(wt.id)::int as trade_count,
            coalesce(sum(wt.usdc_size), 0) as category_volume,
            coalesce(avg(wt.usdc_size), 0) as avg_trade_size,
@@ -188,10 +193,12 @@ export async function getCategoryTopTraders(
     JOIN markets m
       ON wt.condition_id = m.platform_id
       AND m.platform = 'polymarket'
+    LEFT JOIN trader_metrics tm ON tm.trader_id = t.id
     WHERE m.category = ${category}
       AND t.total_pnl > 0
-    GROUP BY t.id
-    HAVING count(wt.id) >= 3
+      AND (tm.win_rate IS NULL OR tm.win_rate >= ${minWinRate})
+    GROUP BY t.id, tm.win_rate
+    HAVING count(wt.id) >= ${minTrades}
     ORDER BY t.total_pnl DESC
     LIMIT ${limit}
   `);
@@ -208,6 +215,8 @@ export async function getCategoryTopTraders(
     avgTradeSize: Number(r.avg_trade_size ?? 0),
     buyVolume: Number(r.buy_volume ?? 0),
     sellVolume: Number(r.sell_volume ?? 0),
+    winRate: r.win_rate != null ? Number(r.win_rate) : null,
+    traderTier: r.trader_tier as string | null,
   }));
 }
 

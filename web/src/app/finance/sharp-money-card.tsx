@@ -1,7 +1,15 @@
 import Link from "next/link";
 import { Card, CardContent } from "@/components/ui/card";
+import { Badge } from "@/components/ui/badge";
 import { formatCompactCurrency } from "@/lib/utils";
 import type { CategoryTopTrader } from "@/db/queries/category-hub";
+
+const TIER_COLORS: Record<string, string> = {
+  whale: "bg-purple-500/15 text-purple-700 dark:text-purple-400",
+  shark: "bg-blue-500/15 text-blue-700 dark:text-blue-400",
+  dolphin: "bg-cyan-500/15 text-cyan-700 dark:text-cyan-400",
+  fish: "bg-gray-500/15 text-gray-700 dark:text-gray-400",
+};
 
 interface SharpMoneyCardProps {
   trader: CategoryTopTrader;
@@ -14,6 +22,7 @@ export function SharpMoneyCard({ trader, rank, categoryLabel = "Finance" }: Shar
   const medal: Record<number, string> = { 1: "\u{1F947}", 2: "\u{1F948}", 3: "\u{1F949}" };
   const total = trader.buyVolume + trader.sellVolume;
   const buyPct = total > 0 ? (trader.buyVolume / total) * 100 : 50;
+  const tier = trader.traderTier ?? "";
 
   return (
     <Card>
@@ -23,9 +32,9 @@ export function SharpMoneyCard({ trader, rank, categoryLabel = "Finance" }: Shar
           {medal[rank] ?? `#${rank}`}
         </span>
 
-        {/* Name & consistency */}
+        {/* Name & stats */}
         <div className="flex-1 min-w-0">
-          <div className="flex items-center gap-1">
+          <div className="flex items-center gap-1.5">
             <Link
               href={`/traders/${trader.proxyWallet}`}
               className="font-medium text-sm hover:underline truncate"
@@ -33,9 +42,17 @@ export function SharpMoneyCard({ trader, rank, categoryLabel = "Finance" }: Shar
               {name}
             </Link>
             {trader.verifiedBadge === 1 && <span>✅</span>}
+            {tier && tier in TIER_COLORS && (
+              <Badge variant="outline" className={`text-[10px] ${TIER_COLORS[tier]}`}>
+                {tier.charAt(0).toUpperCase() + tier.slice(1)}
+              </Badge>
+            )}
           </div>
           <p className="text-xs text-muted-foreground">
             {trader.tradeCount} trades &middot; {formatCompactCurrency(trader.avgTradeSize)} avg
+            {trader.winRate != null && (
+              <> &middot; {(trader.winRate * 100).toFixed(0)}% win</>
+            )}
           </p>
         </div>
 
