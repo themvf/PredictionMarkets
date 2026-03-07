@@ -23,6 +23,8 @@ from agents.alert_agent import AlertAgent
 from agents.insight_agent import InsightAgent
 from agents.trader_agent import TraderAgent
 from agents.whale_agent import WhaleAgent
+from agents.profile_agent import ProfileAgent
+from agents.anomaly_agent import AnomalyDetectionAgent
 from notifications.slack import SlackNotifier
 
 logging.basicConfig(
@@ -39,6 +41,8 @@ AGENT_CLASSES = {
     "insight": InsightAgent,
     "trader": TraderAgent,
     "whale": WhaleAgent,
+    "profile": ProfileAgent,
+    "anomaly": AnomalyDetectionAgent,
 }
 
 
