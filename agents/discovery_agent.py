@@ -163,6 +163,14 @@ class DiscoveryAgent(BaseAgent):
                 raw_category = clean.get("groupItemTitle", "")
             category = normalize_category(raw_category, title)
 
+        # Validate category — only allow known values
+        _VALID_CATEGORIES = {
+            "Politics", "World", "Finance", "Economy",
+            "Tech", "Crypto", "Culture", "Climate & Science", "Other",
+        }
+        if category not in _VALID_CATEGORIES:
+            category = "Other"
+
         # ── Subcategory resolution ───────────────────────────
         # Priority: tag-derived subcategory > title keyword extraction
         if tag_subcategory:
