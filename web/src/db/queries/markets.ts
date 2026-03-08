@@ -179,3 +179,22 @@ export async function getCategoriesWithCounts() {
     .groupBy(markets.category)
     .orderBy(desc(sql`count(*)`));
 }
+
+/** Batch lookup: conditionId (platform_id) → internal market ID */
+export async function getMarketIdsByConditionIds(
+  conditionIds: string[]
+): Promise<Map<string, number>> {
+  if (conditionIds.length === 0) return new Map();
+
+  const rows = await db
+    .select({ id: markets.id, platformId: markets.platformId })
+    .from(markets)
+    .where(
+      and(
+        eq(markets.platform, "polymarket"),
+        inArray(markets.platformId, conditionIds)
+      )
+    );
+
+  return new Map(rows.map((r) => [r.platformId, r.id]));
+}

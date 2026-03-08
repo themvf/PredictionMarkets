@@ -31,6 +31,7 @@ import {
   getTraderAnomalies,
 } from "@/db/queries/traders";
 import { getWhaleTradesByTrader } from "@/db/queries/whales";
+import { getMarketIdsByConditionIds } from "@/db/queries/markets";
 import { formatCurrency, formatPrice, formatPercent, formatRelativeTime } from "@/lib/utils";
 import { WatchlistStar } from "../../watchlist/watchlist-star";
 import { CategoryPnlChart } from "./category-pnl-chart";
@@ -93,6 +94,8 @@ interface LivePosition {
   currentValue: number;
   cashPnl: number;
   percentPnl: number;
+  conditionId: string;
+  eventSlug: string;
 }
 
 async function fetchLivePositions(wallet: string): Promise<LivePosition[]> {
@@ -112,10 +115,45 @@ async function fetchLivePositions(wallet: string): Promise<LivePosition[]> {
       currentValue: Number(p.currentValue ?? p.current ?? 0),
       cashPnl: Number(p.cashPnl ?? 0),
       percentPnl: Number(p.percentPnl ?? 0),
+      conditionId: String(p.conditionId ?? p.asset ?? ""),
+      eventSlug: String(p.eventSlug ?? p.slug ?? ""),
     }));
   } catch {
     return [];
   }
+}
+
+/** Renders a market title as a link — internal page if in DB, Polymarket if not */
+function MarketLink({
+  title,
+  marketId,
+  eventSlug,
+}: {
+  title: string;
+  marketId?: number;
+  eventSlug?: string;
+}) {
+  if (marketId) {
+    return (
+      <Link href={`/markets/${marketId}`} className="hover:underline">
+        {title}
+      </Link>
+    );
+  }
+  if (eventSlug) {
+    return (
+      <a
+        href={`https://polymarket.com/event/${eventSlug}`}
+        target="_blank"
+        rel="noopener noreferrer"
+        className="hover:underline"
+      >
+        {title}
+        <ExternalLink className="inline ml-1 h-3 w-3 text-muted-foreground" />
+      </a>
+    );
+  }
+  return <>{title}</>;
 }
 
 // ── Page ─────────────────────────────────────────────────
@@ -127,6 +165,10 @@ export default async function TraderProfilePage({ params }: Props) {
   // Unknown wallet: show live-only profile from Polymarket API
   if (!trader) {
     const livePositions = await fetchLivePositions(wallet);
+    const liveConditionIds = livePositions
+      .map((p) => p.conditionId)
+      .filter(Boolean);
+    const liveMarketMap = await getMarketIdsByConditionIds(liveConditionIds);
 
     return (
       <div className="space-y-6">
@@ -162,7 +204,13 @@ export default async function TraderProfilePage({ params }: Props) {
                 <TableBody>
                   {livePositions.map((pos, i) => (
                     <TableRow key={i}>
-                      <TableCell className="font-medium">{pos.title}</TableCell>
+                      <TableCell className="font-medium">
+                        <MarketLink
+                          title={pos.title}
+                          marketId={liveMarketMap.get(pos.conditionId)}
+                          eventSlug={pos.eventSlug}
+                        />
+                      </TableCell>
                       <TableCell>{pos.outcome}</TableCell>
                       <TableCell className="text-right font-mono">
                         {formatPrice(pos.curPrice)}
@@ -199,6 +247,13 @@ export default async function TraderProfilePage({ params }: Props) {
       getTraderCategoryPnl(trader.id),
       getTraderAnomalies(trader.id, 10),
     ]);
+
+  // Batch lookup: conditionId → internal market ID for linking
+  const allConditionIds = [
+    ...positions.map((p) => p.conditionId).filter(Boolean),
+    ...recentTrades.map((t) => t.conditionId).filter(Boolean),
+  ] as string[];
+  const marketIdMap = await getMarketIdsByConditionIds(allConditionIds);
 
   const name = trader.userName || wallet.slice(0, 16) + "...";
   const watched = watchedIds.has(trader.id);
@@ -433,7 +488,11 @@ export default async function TraderProfilePage({ params }: Props) {
                 {positions.map((pos) => (
                   <TableRow key={pos.id}>
                     <TableCell className="font-medium">
-                      {pos.marketTitle}
+                      <MarketLink
+                        title={pos.marketTitle ?? ""}
+                        marketId={marketIdMap.get(pos.conditionId ?? "")}
+                        eventSlug={pos.eventSlug ?? ""}
+                      />
                     </TableCell>
                     <TableCell>{pos.outcome}</TableCell>
                     <TableCell className="text-right font-mono">
@@ -488,7 +547,11 @@ export default async function TraderProfilePage({ params }: Props) {
                       {trade.side}
                     </Badge>
                     <span className="truncate max-w-[300px]">
-                      {trade.marketTitle}
+                      <MarketLink
+                        title={trade.marketTitle ?? ""}
+                        marketId={marketIdMap.get(trade.conditionId ?? "")}
+                        eventSlug={trade.eventSlug ?? ""}
+                      />
                     </span>
                   </div>
                   <span className="font-mono font-medium">
