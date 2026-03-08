@@ -38,6 +38,9 @@ class CollectionAgent(BaseAgent):
         # Close markets whose close_time has passed before collecting prices
         closed = queries.close_expired_markets()
 
+        # Remove any non-Finance/Economy markets that slipped through
+        purged_cats = queries.purge_non_target_markets()
+
         # Prune old closed markets (>30 days, no whale trades) to keep DB lean
         pruned = queries.prune_old_closed_markets(days=30)
 
@@ -70,15 +73,17 @@ class CollectionAgent(BaseAgent):
 
         error_summary = f" ({len(errors)} errors)" if errors else ""
         closed_summary = f" Closed {closed} expired." if closed else ""
+        purged_summary = f" Purged {purged_cats['markets']} off-category." if purged_cats["markets"] else ""
         pruned_summary = f" Pruned {pruned['markets']} old markets." if pruned["markets"] else ""
         return AgentResult(
             agent_name=self.name,
             status=AgentStatus.SUCCESS,
             items_processed=snapshots_created,
-            summary=f"Collected {snapshots_created} snapshots{error_summary}.{closed_summary}{pruned_summary}",
+            summary=f"Collected {snapshots_created} snapshots{error_summary}.{closed_summary}{purged_summary}{pruned_summary}",
             data={
                 "snapshots_created": snapshots_created,
                 "markets_closed": closed,
+                "markets_purged_category": purged_cats,
                 "markets_pruned": pruned,
                 "errors": errors[:10],
             },

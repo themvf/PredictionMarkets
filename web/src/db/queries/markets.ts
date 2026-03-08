@@ -1,7 +1,11 @@
 import { db } from "@/db";
 import { markets } from "@/db/schema";
-import { eq, and, ilike, desc, asc, sql, SQL } from "drizzle-orm";
+import { eq, and, ilike, desc, asc, sql, SQL, inArray } from "drizzle-orm";
 import { PAGE_SIZE } from "@/lib/constants";
+
+/** Hard filter: only Finance and Economy markets are ever shown */
+const VALID_CATEGORIES = ["Finance", "Economy"] as const;
+const categoryGuard = inArray(markets.category, [...VALID_CATEGORIES]);
 
 export interface GetMarketsParams {
   platform?: string;
@@ -24,7 +28,7 @@ export async function getMarkets(params: GetMarketsParams = {}) {
     page = 1,
   } = params;
 
-  const conditions: SQL[] = [];
+  const conditions: SQL[] = [categoryGuard];
 
   if (status && status !== "all") {
     conditions.push(eq(markets.status, status));
@@ -119,6 +123,7 @@ export async function searchMarkets(query: string, limit = 20) {
     .from(markets)
     .where(
       and(
+        categoryGuard,
         ilike(markets.title, `%${query}%`),
         eq(markets.status, "active"),
         sql`(${markets.closeTime} IS NULL OR ${markets.closeTime}::timestamptz > NOW())`
@@ -132,7 +137,7 @@ export async function getMarketCategories() {
   const result = await db
     .select({ category: markets.category })
     .from(markets)
-    .where(eq(markets.status, "active"))
+    .where(and(categoryGuard, eq(markets.status, "active")))
     .groupBy(markets.category)
     .orderBy(markets.category);
   return result.map((r) => r.category).filter(Boolean) as string[];
@@ -145,6 +150,7 @@ export async function getFeaturedMarket() {
     .from(markets)
     .where(
       and(
+        categoryGuard,
         eq(markets.status, "active"),
         sql`(${markets.closeTime} IS NULL OR ${markets.closeTime}::timestamptz > NOW())`
       )
@@ -164,6 +170,7 @@ export async function getCategoriesWithCounts() {
     .from(markets)
     .where(
       and(
+        categoryGuard,
         eq(markets.status, "active"),
         sql`${markets.category} IS NOT NULL AND ${markets.category} != ''`,
         sql`(${markets.closeTime} IS NULL OR ${markets.closeTime}::timestamptz > NOW())`

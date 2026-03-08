@@ -1,6 +1,6 @@
 import { db } from "@/db";
 import { markets, alerts, traders, agentLogs, insights, whaleTrades } from "@/db/schema";
-import { eq, sql, desc, and } from "drizzle-orm";
+import { eq, sql, desc, and, inArray } from "drizzle-orm";
 
 export interface DashboardStats {
   totalMarkets: number;
@@ -27,16 +27,20 @@ export async function getDashboardStats(): Promise<DashboardStats> {
     latestInsightResult,
     recentAgentRunsResult,
   ] = await Promise.all([
-    // Total markets
-    db
-      .select({ count: sql<number>`count(*)` })
-      .from(markets),
-
-    // Active markets
+    // Total markets (Finance/Economy only)
     db
       .select({ count: sql<number>`count(*)` })
       .from(markets)
-      .where(eq(markets.status, "active")),
+      .where(inArray(markets.category, ["Finance", "Economy"])),
+
+    // Active markets (Finance/Economy only)
+    db
+      .select({ count: sql<number>`count(*)` })
+      .from(markets)
+      .where(and(
+        eq(markets.status, "active"),
+        inArray(markets.category, ["Finance", "Economy"])
+      )),
 
     // Total traders
     db

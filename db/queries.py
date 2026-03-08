@@ -275,6 +275,57 @@ class MarketQueries:
 
         return result
 
+    def purge_non_target_markets(self) -> Dict[str, int]:
+        """Delete ALL markets not in Finance/Economy, cascading child rows.
+
+        This is the authoritative cleanup that prevents non-target categories
+        from lingering in the database regardless of how they got there.
+        """
+        VALID = ("Finance", "Economy")
+        result = {"markets": 0, "price_snapshots": 0, "market_pairs": 0, "alerts": 0}
+
+        with self.db._connect() as conn:
+            # Find IDs of all non-target markets
+            placeholders = ",".join("?" for _ in VALID)
+            ids_rows = conn.execute(
+                f"SELECT id FROM markets WHERE category NOT IN ({placeholders})"
+                f" OR category IS NULL OR category = ''",
+                list(VALID),
+            ).fetchall()
+
+            market_ids = [r["id"] for r in ids_rows]
+            if not market_ids:
+                return result
+
+            ph = ",".join("?" for _ in market_ids)
+
+            cur = conn.execute(
+                f"DELETE FROM price_snapshots WHERE market_id IN ({ph})",
+                market_ids,
+            )
+            result["price_snapshots"] = cur.rowcount
+
+            cur = conn.execute(
+                f"DELETE FROM market_pairs WHERE kalshi_market_id IN ({ph})"
+                f" OR polymarket_market_id IN ({ph})",
+                market_ids + market_ids,
+            )
+            result["market_pairs"] = cur.rowcount
+
+            cur = conn.execute(
+                f"DELETE FROM alerts WHERE market_id IN ({ph})",
+                market_ids,
+            )
+            result["alerts"] = cur.rowcount
+
+            cur = conn.execute(
+                f"DELETE FROM markets WHERE id IN ({ph})",
+                market_ids,
+            )
+            result["markets"] = cur.rowcount
+
+        return result
+
     # ── Market Pairs ─────────────────────────────────────────
 
     def upsert_pair(self, pair: MarketPair) -> int:

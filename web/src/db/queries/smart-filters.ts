@@ -1,6 +1,6 @@
 import { db } from "@/db";
 import { markets } from "@/db/schema";
-import { eq, and, sql, desc, gte, lte } from "drizzle-orm";
+import { eq, and, sql, desc, gte, lte, inArray } from "drizzle-orm";
 import type { Market } from "@/db/schema";
 
 const DEFAULT_LIMIT = 50;
@@ -15,6 +15,7 @@ export async function getWhaleFavoriteMarkets(
     JOIN whale_trades wt ON wt.condition_id = m.platform_id
       AND m.platform = 'polymarket'
     WHERE m.status = 'active'
+      AND m.category IN ('Finance', 'Economy')
     GROUP BY m.id
     ORDER BY COUNT(wt.id) DESC
     LIMIT ${limit}
@@ -30,6 +31,7 @@ export async function getClosingSoonMarkets(
     const rows = await db.execute(sql`
       SELECT * FROM markets
       WHERE status = 'active'
+        AND category IN ('Finance', 'Economy')
         AND close_time IS NOT NULL
         AND close_time != ''
         AND close_time::timestamptz > NOW()
@@ -53,6 +55,7 @@ export async function getNear5050Markets(
     .where(
       and(
         eq(markets.status, "active"),
+        inArray(markets.category, ["Finance", "Economy"]),
         gte(markets.yesPrice, 0.45),
         lte(markets.yesPrice, 0.55)
       )
@@ -72,6 +75,7 @@ export async function getHighArbMarkets(
       ON m.id = mp.polymarket_market_id OR m.id = mp.kalshi_market_id
     WHERE ABS(COALESCE(mp.price_gap, 0)) >= 0.03
       AND m.status = 'active'
+      AND m.category IN ('Finance', 'Economy')
     ORDER BY m.volume DESC NULLS LAST
     LIMIT ${limit}
   `);
@@ -104,6 +108,7 @@ export async function getHottestMarkets(
       JOIN latest l ON l.market_id = m.id
       JOIN day_ago d ON d.market_id = m.id
       WHERE m.status = 'active'
+        AND m.category IN ('Finance', 'Economy')
       ORDER BY ABS(COALESCE(l.current_price, 0) - COALESCE(d.old_price, 0)) DESC
       LIMIT ${limit}
     `);
