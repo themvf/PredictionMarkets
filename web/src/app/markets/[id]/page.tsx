@@ -109,10 +109,26 @@ async function fetchLiveHolders(conditionId: string): Promise<PolymarketHolder[]
   }
 }
 
-async function MarketTopHolders({ conditionId }: { conditionId: string }) {
+async function MarketTopHolders({
+  conditionId,
+  yesPrice,
+  noPrice,
+}: {
+  conditionId: string;
+  yesPrice: number | null;
+  noPrice: number | null;
+}) {
   const holders = await fetchLiveHolders(conditionId);
 
   if (holders.length === 0) return null;
+
+  // Compute value per holder and sort by value descending
+  const holdersWithValue = holders
+    .map((h) => {
+      const price = h.outcomeIndex === 0 ? (yesPrice ?? 0) : (noPrice ?? 0);
+      return { ...h, value: h.amount * price };
+    })
+    .sort((a, b) => b.value - a.value);
 
   return (
     <Card>
@@ -129,10 +145,11 @@ async function MarketTopHolders({ conditionId }: { conditionId: string }) {
               <TableHead>Trader</TableHead>
               <TableHead>Side</TableHead>
               <TableHead className="text-right">Shares</TableHead>
+              <TableHead className="text-right">Value</TableHead>
             </TableRow>
           </TableHeader>
           <TableBody>
-            {holders.map((h, i) => (
+            {holdersWithValue.map((h, i) => (
               <TableRow key={`${h.proxyWallet}-${h.outcomeIndex}-${i}`}>
                 <TableCell>
                   <Link
@@ -153,6 +170,9 @@ async function MarketTopHolders({ conditionId }: { conditionId: string }) {
                 </TableCell>
                 <TableCell className="text-right font-mono">
                   {h.amount.toLocaleString(undefined, { maximumFractionDigits: 0 })}
+                </TableCell>
+                <TableCell className="text-right font-mono">
+                  {formatCurrency(h.value, 0)}
                 </TableCell>
               </TableRow>
             ))}
@@ -273,7 +293,11 @@ export default async function MarketDetailPage(props: Props) {
       <Suspense
         fallback={<Skeleton className="h-[200px] w-full rounded-xl" />}
       >
-        <MarketTopHolders conditionId={market.platformId} />
+        <MarketTopHolders
+          conditionId={market.platformId}
+          yesPrice={market.yesPrice}
+          noPrice={market.noPrice}
+        />
       </Suspense>
 
       {/* Meta info */}
